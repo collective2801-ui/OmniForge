@@ -5,8 +5,8 @@ import { getMetrics } from '../business/revenueTracker.js';
 
 export const app = express();
 
-app.get('/metrics', (req, res) => {
-  res.json(getMetrics());
+app.get('/metrics', async (req, res) => {
+  res.json(await getMetrics());
 });
 
 export function startDashboardServer(port = 4000) {

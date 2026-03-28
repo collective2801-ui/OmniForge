@@ -8,7 +8,7 @@ import {
   inventSoftwareIdeas,
   lockSpec,
 } from './intelligence.js';
-import { captureLead } from './leads.js';
+import { captureLead, getLeads } from './leads.js';
 import { getMetrics, trackRevenue } from './metrics.js';
 import { generateOffer } from './offer.js';
 import { generatePitch } from './pitch.js';
@@ -28,6 +28,7 @@ export {
   inventSoftwareIdeas,
   lockSpec,
   captureLead,
+  getLeads,
   trackRevenue,
   getMetrics,
   generateOffer,
@@ -49,6 +50,7 @@ export default {
   inventSoftwareIdeas,
   lockSpec,
   captureLead,
+  getLeads,
   trackRevenue,
   getMetrics,
   generateOffer,

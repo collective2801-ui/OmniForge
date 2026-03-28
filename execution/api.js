@@ -27,12 +27,14 @@ export function createServer(schema = {}) {
   Object.keys(schema).forEach((table) => {
     db.createTable(table);
 
-    app.post(`/api/${table}`, (req, res) => {
-      res.json(db.insert(table, req.body));
+    app.post(`/api/${table}`, async (req, res) => {
+      const inserted = await db.insertAsync(table, req.body);
+      res.json(inserted);
     });
 
-    app.get(`/api/${table}`, (req, res) => {
-      res.json(db.find(table));
+    app.get(`/api/${table}`, async (req, res) => {
+      const rows = await db.findAsync(table);
+      res.json(rows);
     });
   });
 

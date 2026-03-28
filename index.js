@@ -12,7 +12,6 @@ import { runLoop } from './autonomy/runLoop.js';
 import business from './business/index.js';
 import dashboard from './dashboard/index.js';
 import delivery from './delivery/index.js';
-import { deliverApp } from './delivery/deliveryEngine.js';
 import { saveApp } from './delivery/fileWriter.js';
 import frontend from './frontend/index.js';
 import preview from './preview/index.js';
@@ -45,6 +44,7 @@ import { getMetrics, trackRevenue } from './business/revenueTracker.js';
 import { testPricing } from './business/pricing.js';
 import { launchBusiness } from './autonomy/businessLauncher.js';
 import { optimizeRevenue } from './autonomy/revenueOptimizer.js';
+import { recordPlatformEvent } from './backend/persistenceStore.js';
 
 let serverModulePromise = null;
 
@@ -84,6 +84,15 @@ export async function runOmniForge(url, options = {}) {
       ideas: generateProducts(businessAnalysis),
     });
 
+    await recordPlatformEvent({
+      eventType: 'build.compatibility_completed',
+      payload: {
+        url,
+        selectedCount: options.length,
+        apps: savedApps,
+      },
+    }).catch(() => null);
+
     reflect(final);
 
     return final;
@@ -111,7 +120,7 @@ export async function runOmniForge(url, options = {}) {
     null;
 
   if (selection === null || selection === undefined) {
-    return {
+    const response = {
       stage: 'selection_required',
       selectionRequired: true,
       workflow: [
@@ -126,6 +135,18 @@ export async function runOmniForge(url, options = {}) {
       monetizationOpportunities,
       ideas,
     };
+
+    await recordPlatformEvent({
+      eventType: 'build.selection_required',
+      payload: {
+        url,
+        source: businessIntelligence.source,
+        ideaCount: ideas.length,
+        ideaNames: ideas.map((idea) => idea.name),
+      },
+    }).catch(() => null);
+
+    return response;
   }
 
   const lockedSpec = lockSpec(ideas, selection);
@@ -134,7 +155,7 @@ export async function runOmniForge(url, options = {}) {
     ...lockedSpec,
     output: builtApp,
   });
-  trackRevenue(lockedSpec.name, Math.random() * 1000);
+  await trackRevenue(lockedSpec.name, Math.random() * 1000);
 
   const final = selfHeal({
     productionReady: true,
@@ -162,6 +183,17 @@ export async function runOmniForge(url, options = {}) {
       automated: true,
     },
   });
+
+  await recordPlatformEvent({
+    eventType: 'build.completed',
+    payload: {
+      url,
+      appName: lockedSpec.name,
+      features: lockedSpec.features,
+      deployment,
+      lockedSpec,
+    },
+  }).catch(() => null);
 
   reflect(final);
 
@@ -262,9 +294,7 @@ export default {
   trackRevenue,
   getMetrics,
   testPricing,
-  orchestrator,
   runTask,
-  runOmniForge,
   launchBusiness,
   optimizeRevenue,
   deploymentService,
@@ -281,14 +311,22 @@ export default {
   runAutonomousMode,
   preview,
   scraper,
-  startOmniForgeServer,
   shared,
   uiSystem,
+  startOmniForgeServer,
+  runOmniForge,
 };
 
-const currentFilePath = fileURLToPath(import.meta.url);
-const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const isDirectRun =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === process.argv[1];
 
-if (currentFilePath === executedFilePath) {
-  await startOmniForgeServer();
+if (isDirectRun) {
+  const serverInfo = await startOmniForgeServer();
+  const localUrl =
+    serverInfo.host === '0.0.0.0'
+      ? `http://127.0.0.1:${serverInfo.port}`
+      : `http://${serverInfo.host}:${serverInfo.port}`;
+
+  console.log(`OmniForge is running at ${localUrl}`);
 }
