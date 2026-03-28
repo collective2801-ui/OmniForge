@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import QRCode from 'qrcode';
 import PlatformShell from '../components/PlatformShell.jsx';
-import PromptBox from '../components/PromptBox.jsx';
-import SystemConsole from '../components/SystemConsole.jsx';
+import PromptBox, { ReferenceOptionGrid } from '../components/PromptBox.jsx';
 import { useBuilder } from '../hooks/useBuilder.js';
 import OmniForgeInterface, {
   OMNIFORGE_INTERFACE_MODES,
@@ -140,6 +140,7 @@ export default function Builder() {
   const [projects, setProjects] = useState([]);
   const [sidebarSearch, setSidebarSearch] = useState('');
   const [previewLinkState, setPreviewLinkState] = useState('');
+  const [mobileQrCodeUrl, setMobileQrCodeUrl] = useState('');
   const {
     prompt,
     setPrompt,
@@ -173,6 +174,7 @@ export default function Builder() {
     referenceBuildOptions,
     selectedBuildOptions,
     selectedBuildOption,
+    productReadiness,
     websiteDraft,
     setWebsiteDraft,
     processingReferences,
@@ -181,6 +183,8 @@ export default function Builder() {
     removeReference,
     toggleBuildOption,
     buildFromReferenceOption,
+    buildSelectedReferenceOptions,
+    runCompletionPass,
     runPrompt,
     publishProject,
   } = useBuilder({
@@ -189,17 +193,9 @@ export default function Builder() {
   });
   const voiceControllerRef = useRef(null);
   const seededPromptHandledRef = useRef(false);
-  const previousLoadingRef = useRef(false);
   const [activeInterfaceMode, setActiveInterfaceMode] = useState('prompt');
   const [activeCanvasTab, setActiveCanvasTab] = useState('preview');
   const [fileListExpanded, setFileListExpanded] = useState(true);
-  const [expandedInspectorSections, setExpandedInspectorSections] = useState({
-    activity: false,
-    delivery: false,
-    system: false,
-    integrations: false,
-    mobile: false,
-  });
   const [voiceState, setVoiceState] = useState({
     supported: false,
     listening: false,
@@ -217,10 +213,12 @@ export default function Builder() {
   useEffect(() => {
     let active = true;
 
-    Promise.all([
-      authClient.getCurrentUser(),
-      authClient.getUserProjects(),
-    ]).then(([userResult, projectsResult]) => {
+    async function hydrateBuilderShell() {
+      const [userResult, projectsResult] = await Promise.all([
+        authClient.getCurrentUser(),
+        authClient.getUserProjects(),
+      ]);
+
       if (!active) {
         return;
       }
@@ -232,12 +230,22 @@ export default function Builder() {
       if (projectsResult.ok) {
         setProjects(projectsResult.projects ?? []);
       }
-    });
+    }
+
+    void hydrateBuilderShell();
 
     return () => {
       active = false;
     };
   }, []);
+
+  async function refreshProjects() {
+    const projectsResult = await authClient.getUserProjects();
+
+    if (projectsResult.ok) {
+      setProjects(projectsResult.projects ?? []);
+    }
+  }
 
   useEffect(() => () => {
     voiceControllerRef.current?.abort?.();
@@ -258,20 +266,6 @@ export default function Builder() {
     }
   }, [autorun, runPrompt, seedPrompt, setPrompt]);
 
-  useEffect(() => {
-    if (previousLoadingRef.current && !loading) {
-      setExpandedInspectorSections({
-        activity: false,
-        delivery: false,
-        system: false,
-        integrations: false,
-        mobile: false,
-      });
-    }
-
-    previousLoadingRef.current = loading;
-  }, [loading]);
-
   function handleTextRun(nextPrompt) {
     return runPrompt(nextPrompt, {
       inputMode: 'text',
@@ -279,11 +273,12 @@ export default function Builder() {
   }
 
   async function handlePublish() {
-    setExpandedInspectorSections((currentSections) => ({
-      ...currentSections,
-      delivery: true,
-    }));
     await publishProject();
+  }
+
+  async function handleBuildSelectedOptions() {
+    await buildSelectedReferenceOptions();
+    await refreshProjects();
   }
 
   async function handleCopyPreviewLink() {
@@ -361,20 +356,6 @@ export default function Builder() {
     });
   }
 
-  function toggleInspectorSection(sectionId) {
-    setExpandedInspectorSections((currentSections) => ({
-      ...currentSections,
-      [sectionId]: !currentSections[sectionId],
-    }));
-  }
-
-  function openInspectorSection(sectionId) {
-    setExpandedInspectorSections((currentSections) => ({
-      ...currentSections,
-      [sectionId]: true,
-    }));
-  }
-
   const controlCenter = useMemo(() => createControlCenter({
     prompt,
     loading,
@@ -411,7 +392,6 @@ export default function Builder() {
     voiceState,
   ]);
   const liveLogPreview = controlCenter.inspector.activityFeed;
-  const interfaceStatusMeta = controlCenter.progress;
   const canPublish = Boolean(
     projectId &&
     !loading &&
@@ -440,22 +420,101 @@ export default function Builder() {
     [projects],
   );
   const previewAccessUrl = preview.url || deployment?.url || '';
+  const finalProductUrl = useMemo(() => {
+    if (typeof domain?.domain === 'string' && domain.domain.trim().length > 0) {
+      return `https://${domain.domain.trim().replace(/^https?:\/\//, '')}`;
+    }
+
+    return previewAccessUrl;
+  }, [domain?.domain, previewAccessUrl]);
+  const isMobileBuild = Boolean(
+    mobile?.status ||
+      intent?.projectType === 'mobile_app' ||
+      /\b(mobile|ios|iphone|ipad|android|expo|react native|native app)\b/i.test(
+        `${intent?.summary ?? ''} ${(intent?.features ?? []).join(' ')}`,
+      ),
+  );
+  const expoLaunchUrl = useMemo(() => {
+    const candidates = [
+      mobile?.access?.expoGoUrl,
+      mobile?.access?.launchUrl,
+      mobile?.runtimeConfig?.publicRuntimeEnv?.EXPO_PUBLIC_LAUNCH_URL,
+      mobile?.runtimeConfig?.publicRuntimeEnv?.EXPO_GO_URL,
+    ];
+
+    return candidates.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+  }, [mobile]);
+  const mobileAccessTarget = useMemo(() => {
+    if (!isMobileBuild) {
+      return '';
+    }
+
+    const candidates = [
+      expoLaunchUrl,
+      finalProductUrl,
+      mobile?.access?.qrTarget,
+      mobile?.access?.appUrl,
+      mobile?.runtimeConfig?.publicRuntimeEnv?.APP_URL,
+      mobile?.runtimeConfig?.publicRuntimeEnv?.PUBLIC_APP_URL,
+    ];
+
+    return candidates.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+  }, [expoLaunchUrl, finalProductUrl, isMobileBuild, mobile]);
+  const hasNativeExpoLaunch = expoLaunchUrl.startsWith('exp://') || expoLaunchUrl.startsWith('exps://');
+  const failedReadinessChecks = productReadiness.checks.filter((check) => check.state === 'failed');
+  const canRunCompletionPass = !loading && failedReadinessChecks.length > 0;
   const modeCopy = {
     prompt: {
       title: 'Prompt Build',
-      summary: 'Describe the product, then let OmniForge build and validate it.',
+      summary: 'Describe the product and run the build.',
     },
     website: {
       title: 'Analyze Website',
-      summary: 'Paste a website, review four generated directions, then build the best one.',
+      summary: 'Paste a website address and choose a build direction.',
     },
     upload: {
       title: 'Upload & Build',
-      summary: 'Upload source material, choose one of the generated directions, and ship it.',
+      summary: 'Upload source material and build from the selected direction.',
     },
   };
   const currentModeCopy = modeCopy[activeInterfaceMode] ?? modeCopy.prompt;
   const recentActivity = [...logs].slice(-8).reverse();
+
+  useEffect(() => {
+    let active = true;
+
+    if (!mobileAccessTarget) {
+      setMobileQrCodeUrl('');
+      return () => {
+        active = false;
+      };
+    }
+
+    void QRCode.toDataURL(mobileAccessTarget, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 240,
+      color: {
+        dark: '#0b1120',
+        light: '#f8fafc',
+      },
+    })
+      .then((value) => {
+        if (active) {
+          setMobileQrCodeUrl(value);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setMobileQrCodeUrl('');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mobileAccessTarget]);
+
   const sidebarSections = useMemo(
     () => [
       {
@@ -569,47 +628,13 @@ export default function Builder() {
       },
       {
         id: 'open-delivery',
-        label: 'Open delivery details',
-        description: 'Expand publish and domain details in the inspector.',
-        keywords: ['delivery', 'publish', 'domain'],
+        label: 'Open live preview',
+        description: 'Open the current live preview in a new tab.',
+        keywords: ['preview', 'live', 'open'],
         onSelect() {
-          openInspectorSection('delivery');
-        },
-      },
-      {
-        id: 'open-activity-log',
-        label: 'Open activity log',
-        description: 'Expand the full execution log in the inspector.',
-        keywords: ['activity', 'logs', 'console'],
-        onSelect() {
-          openInspectorSection('activity');
-        },
-      },
-      {
-        id: 'open-system',
-        label: 'Open system details',
-        description: 'Expand runtime and architecture details in the inspector.',
-        keywords: ['system', 'runtime', 'architecture'],
-        onSelect() {
-          openInspectorSection('system');
-        },
-      },
-      {
-        id: 'open-integrations',
-        label: 'Open integration details',
-        description: 'Expand provider and API details in the inspector.',
-        keywords: ['integrations', 'api', 'providers'],
-        onSelect() {
-          openInspectorSection('integrations');
-        },
-      },
-      {
-        id: 'open-mobile',
-        label: 'Open mobile details',
-        description: 'Expand mobile and app-store outputs in the inspector.',
-        keywords: ['mobile', 'store', 'expo'],
-        onSelect() {
-          openInspectorSection('mobile');
+          if (previewAccessUrl) {
+            window.open(previewAccessUrl, '_blank', 'noopener,noreferrer');
+          }
         },
       },
       {
@@ -627,7 +652,7 @@ export default function Builder() {
       },
       ...projectCommands,
     ];
-  }, [canPublish, filteredProjects, handlePublish, navigate, openInspectorSection]);
+  }, [canPublish, filteredProjects, handlePublish, navigate, previewAccessUrl]);
   const interfaceActions = (
     <>
       {previewAccessUrl ? (
@@ -648,26 +673,15 @@ export default function Builder() {
       >
         {loading ? 'Publishing…' : 'Publish'}
       </button>
-      {projectId ? (
-        <Link
-          className="platform-action platform-action--link"
-          to={`/projects/${encodeURIComponent(projectId)}`}
-        >
-          Workspace
-        </Link>
-      ) : null}
-      <Link className="platform-action platform-action--link" to="/dashboard">
-        Home
-      </Link>
     </>
   );
   const leftPanel = (
-    <>
+    <div className="studio-thread-stack">
       <section className="panel studio-chat-panel">
         <div className="panel-header">
           <div>
             <p className="panel-kicker">Build Thread</p>
-            <h2 className="panel-title">Conversation + source context</h2>
+            <h2 className="panel-title">Build thread</h2>
           </div>
           <span className={`panel-badge ${loading ? 'panel-badge--running' : ''}`}>
             {loading ? 'Live' : 'Ready'}
@@ -725,6 +739,7 @@ export default function Builder() {
       </section>
 
       <PromptBox
+        mode={activeInterfaceMode}
         prompt={prompt}
         loading={loading}
         processingReferences={processingReferences}
@@ -740,18 +755,20 @@ export default function Builder() {
         onRemoveReference={removeReference}
         onToggleReferenceOption={toggleBuildOption}
         onUseReferenceOption={buildFromReferenceOption}
+        onBuildSelectedOptions={handleBuildSelectedOptions}
         onSubmit={handleTextRun}
         onVoiceToggle={handleVoiceToggle}
         voice={voiceState}
+        showBuildOptions={false}
       />
-    </>
+    </div>
   );
   const centerPanel = (
     <section className="panel studio-canvas-panel">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">{currentModeCopy.title}</p>
-          <h2 className="panel-title">{preview.title}</h2>
+          <p className="panel-kicker">{projectName || currentModeCopy.title}</p>
+          <h2 className="panel-title">{activeCanvasTab === 'preview' ? preview.title : activeCanvasTab === 'code' ? 'Generated Code' : 'Database'}</h2>
         </div>
         <div className="workspace-tabs">
           <button
@@ -779,74 +796,48 @@ export default function Builder() {
       </div>
 
       <div className="studio-canvas-panel__body">
-        <div className={`omniforge-execution-ribbon ${loading ? 'omniforge-execution-ribbon--active' : ''}`}>
-          <div className="omniforge-execution-ribbon__copy">
-            <span className="panel-kicker">Execution Pulse</span>
-            <strong>{controlCenter.progress.headline}</strong>
-            <p>{currentModeCopy.summary}</p>
-          </div>
-          <div className="omniforge-execution-ribbon__meta">
-            <span>{controlCenter.progress.currentStageLabel}</span>
-            <strong>{controlCenter.progress.percent}%</strong>
-          </div>
-          <div className="omniforge-execution-ribbon__progress">
-            <span style={{ width: `${controlCenter.progress.percent}%` }} />
-          </div>
-          <div className="omniforge-execution-ribbon__stages">
-            {controlCenter.progress.rail.map((stage) => (
-              <article
-                className={`omniforge-execution-ribbon__stage omniforge-execution-ribbon__stage--${stage.status} omniforge-execution-ribbon__stage--${stage.accent}`}
-                key={stage.id}
-              >
-                <span>{stage.label}</span>
-                <strong>{stage.indicator}</strong>
-              </article>
-            ))}
-          </div>
+        <div className="builder-canvas-status">
+          <span>{loading ? controlCenter.progress.currentStageLabel : 'Ready'}</span>
+          <strong>{loading ? `${controlCenter.progress.percent}%` : (preview.ready ? 'Live preview ready' : currentModeCopy.summary)}</strong>
         </div>
 
-        <div className="studio-canvas-meta">
-          <div className="builder-command-bar__badges">
-            <span className="panel-badge">
-              {lastInputMode === 'voice' ? 'Voice input' : 'Text input'}
-            </span>
-            <span className="panel-badge">
-              {preview.ready ? (preview.url ? 'Live preview' : 'Sandbox preview') : 'Preview pending'}
-            </span>
-            {inputAnalysis?.type ? <span className="panel-badge">{inputAnalysis.type}</span> : null}
-          </div>
-
-          <div className="product-preview__actions">
-            {preview.url ? (
-              <>
-                <a
-                  className="panel-badge"
-                  href={preview.url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Open Live App
-                </a>
+        {activeCanvasTab === 'preview' ? (
+          <div className="builder-preview-toolbar">
+            <div className="builder-preview-toolbar__address">
+              {previewAccessUrl || 'Preview will appear here after the build starts.'}
+            </div>
+            <div className="product-preview__actions">
+              {preview.url ? (
+                <>
+                  <a
+                    className="panel-badge"
+                    href={preview.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open
+                  </a>
+                  <button
+                    className="platform-action platform-action--muted"
+                    onClick={() => void handleCopyPreviewLink()}
+                    type="button"
+                  >
+                    {previewLinkState || 'Copy'}
+                  </button>
+                </>
+              ) : (
                 <button
-                  className="platform-action"
-                  onClick={() => void handleCopyPreviewLink()}
+                  className="platform-action platform-action--muted"
+                  disabled={!canPublish}
+                  onClick={() => void handlePublish()}
                   type="button"
                 >
-                  {previewLinkState || 'Copy Link'}
+                  Publish
                 </button>
-              </>
-            ) : (
-              <button
-                className="platform-action"
-                disabled={!canPublish}
-                onClick={() => void handlePublish()}
-                type="button"
-              >
-                Publish Project
-              </button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {activeCanvasTab === 'preview' ? (
           <div className="builder-preview-layout">
@@ -866,7 +857,7 @@ export default function Builder() {
                       <iframe
                         className="product-preview__frame"
                         loading="lazy"
-                        sandbox=""
+                        sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-scripts"
                         srcDoc={preview.srcDoc}
                         title={preview.title}
                       />
@@ -893,36 +884,187 @@ export default function Builder() {
               </div>
             </div>
 
-            <div className="builder-preview-sidebar">
-              <article className="builder-sidecard">
+            <aside className="builder-preview-sidebar">
+              <section className="builder-sidecard builder-sidecard--deploy">
                 <div className="builder-sidecard__top">
-                  <strong>Preview route</strong>
-                  <span className="panel-badge">{preview.ready ? 'active' : 'idle'}</span>
-                </div>
-                <p>{previewAccessUrl || preview.summary}</p>
-              </article>
-
-              <article className="builder-sidecard">
-                <div className="builder-sidecard__top">
-                  <strong>Source mode</strong>
-                  <span className="panel-badge">{currentModeCopy.title}</span>
-                </div>
-                <p>{currentModeCopy.summary}</p>
-              </article>
-
-              {selectedBuildOptions.length > 0 ? (
-                <article className="builder-sidecard">
-                  <div className="builder-sidecard__top">
-                    <strong>
-                      {selectedBuildOptions.length === 1 ? 'Selected direction' : 'Selected directions'}
-                    </strong>
-                    <span className="panel-badge">source build</span>
+                  <div>
+                    <p className="panel-kicker">Deploy</p>
+                    <h3 className="panel-title">Production readiness</h3>
                   </div>
-                  <p>{selectedBuildOptions.map((option) => option.name || option.title).join(' • ')}</p>
-                </article>
-              ) : null}
-            </div>
+                  <span className={`panel-badge ${productReadiness.ready ? '' : 'panel-badge--running'}`}>
+                    {productReadiness.ready ? 'Ready' : failedReadinessChecks.length > 0 ? 'Needs fixes' : 'Pending'}
+                  </span>
+                </div>
+
+                <div className="builder-readiness-score">
+                  <strong>{productReadiness.score}/{productReadiness.total}</strong>
+                  <span>
+                    {productReadiness.ready
+                      ? 'All completion gates passed.'
+                      : failedReadinessChecks.length > 0
+                        ? 'Completion gates are still open.'
+                        : 'Run a build to evaluate readiness.'}
+                  </span>
+                </div>
+
+                <div className="builder-readiness-checklist">
+                  {productReadiness.checks.map((check) => (
+                    <article
+                      className={`builder-readiness-check builder-readiness-check--${check.state}`}
+                      key={check.id}
+                    >
+                      <div className="builder-readiness-check__top">
+                        <strong>{check.label}</strong>
+                        <span>
+                          {check.state === 'passed' ? 'Pass' : check.state === 'failed' ? 'Fix' : 'Pending'}
+                        </span>
+                      </div>
+                      <p>{check.detail}</p>
+                    </article>
+                  ))}
+                </div>
+
+                {productReadiness.missingFiles.length > 0 ? (
+                  <div className="builder-readiness-missing">
+                    <span>Missing files</span>
+                    <ul>
+                      {productReadiness.missingFiles.map((filePath) => (
+                        <li key={filePath}>{filePath}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="builder-sidecard__actions">
+                  <button
+                    className="platform-action platform-action--muted"
+                    disabled={!canPublish}
+                    onClick={() => void handlePublish()}
+                    type="button"
+                  >
+                    {loading ? 'Publishing…' : 'Publish'}
+                  </button>
+                  <button
+                    className="prompt-submit prompt-submit--compact"
+                    disabled={!canRunCompletionPass}
+                    onClick={() => void runCompletionPass()}
+                    type="button"
+                  >
+                    Run completion pass
+                  </button>
+                </div>
+              </section>
+
+              <section className="builder-sidecard builder-sidecard--access">
+                <div className="builder-sidecard__top">
+                  <div>
+                    <p className="panel-kicker">Access</p>
+                    <h3 className="panel-title">Finished product</h3>
+                  </div>
+                  <span className="panel-badge">
+                    {finalProductUrl ? 'Live' : isMobileBuild ? 'Mobile build' : 'Pending'}
+                  </span>
+                </div>
+
+                {finalProductUrl ? (
+                  <div className="builder-access-link">
+                    <span className="builder-access-link__label">
+                      {isMobileBuild ? 'Web companion URL' : 'Live product URL'}
+                    </span>
+                    <a
+                      className="builder-access-link__url"
+                      href={finalProductUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {finalProductUrl}
+                    </a>
+                  </div>
+                ) : (
+                  <p className="builder-access-empty">
+                    Run a production build to generate a public access URL for the finished product.
+                  </p>
+                )}
+
+                {isMobileBuild ? (
+                  mobileAccessTarget ? (
+                    <div className="builder-mobile-qr">
+                      <div className="builder-mobile-qr__frame">
+                        {mobileQrCodeUrl ? (
+                          <img
+                            alt={hasNativeExpoLaunch ? 'Expo Go launch QR code' : 'Mobile access QR code'}
+                            className="builder-mobile-qr__image"
+                            src={mobileQrCodeUrl}
+                          />
+                        ) : (
+                          <div className="builder-mobile-qr__loading">Generating QR…</div>
+                        )}
+                      </div>
+                      <div className="builder-mobile-qr__caption">
+                        <strong>{hasNativeExpoLaunch ? 'Expo Go launch' : 'Mobile access'}</strong>
+                        <span>
+                          {hasNativeExpoLaunch
+                            ? 'Scan this with Expo Go to open the generated mobile build.'
+                            : 'Scan this with your phone to open the finished mobile product while native packages are prepared.'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="builder-access-empty">
+                      The mobile scaffold is ready, but a launch URL is not available yet. Publish or run a completion pass to finish access delivery.
+                    </p>
+                  )
+                ) : null}
+
+                <div className="builder-sidecard__actions">
+                  {finalProductUrl ? (
+                    <a
+                      className="platform-action platform-action--link"
+                      href={finalProductUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Open product
+                    </a>
+                  ) : null}
+                  {mobileAccessTarget ? (
+                    <a
+                      className="platform-action platform-action--muted"
+                      href={mobileAccessTarget}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {hasNativeExpoLaunch ? 'Open Expo launch' : 'Open mobile access'}
+                    </a>
+                  ) : null}
+                </div>
+              </section>
+            </aside>
           </div>
+        ) : null}
+
+        {activeCanvasTab === 'preview' && referenceBuildOptions.length > 0 ? (
+          <section className="builder-idea-stage">
+            <div className="builder-idea-stage__header">
+              <div>
+                <p className="panel-kicker">App Ideas</p>
+                <h3 className="panel-title">Choose one or two finished products to build</h3>
+                <p className="builder-idea-stage__summary">
+                  Each concept includes its promised features and projected cash-flow impact. Select up to two and build them.
+                </p>
+              </div>
+            </div>
+
+            <ReferenceOptionGrid
+              loading={loading}
+              onBuildSelectedOptions={handleBuildSelectedOptions}
+              onToggleReferenceOption={toggleBuildOption}
+              onUseReferenceOption={buildFromReferenceOption}
+              processingReferences={processingReferences}
+              referenceBuildOptions={referenceBuildOptions}
+              selectedBuildOptions={selectedBuildOptions}
+            />
+          </section>
         ) : null}
 
         {activeCanvasTab === 'code' ? (
@@ -1027,137 +1169,6 @@ export default function Builder() {
       </div>
     </section>
   );
-  const rightPanel = (
-    <section className="panel studio-inspector-panel">
-      <div className="panel-header">
-        <div>
-          <p className="panel-kicker">Inspector</p>
-          <h2 className="panel-title">Focused build state</h2>
-        </div>
-        <span className={`panel-badge ${loading ? 'panel-badge--running' : ''}`}>
-          {controlCenter.inspector.progressLabel}
-        </span>
-      </div>
-
-      <div className="studio-inspector-panel__body">
-        <article
-          className={`thinking-panel thinking-panel--compact ${
-            loading ? 'thinking-panel--active' : ''
-          }`}
-        >
-          <div className="thinking-panel__header">
-            <div>
-              <p className="panel-kicker">Current state</p>
-              <h3 className="panel-title">{controlCenter.inspector.headline}</h3>
-            </div>
-            <span className="panel-badge">{controlCenter.inspector.stageLabel}</span>
-          </div>
-          <p className="thinking-panel__summary">{controlCenter.inspector.summary}</p>
-          {loading ? (
-            <>
-              <div className="thinking-progress">
-                <span
-                  className={`thinking-progress__bar ${controlCenter.thinking.pulse ? 'thinking-progress__bar--active' : ''}`}
-                  style={{ width: `${controlCenter.thinking.progress}%` }}
-                />
-              </div>
-              <div className="omniforge-flow-lines" aria-hidden="true">
-                {controlCenter.thinking.ambientLines.map((line) => (
-                  <span
-                    className={`omniforge-flow-lines__segment ${line.active ? 'omniforge-flow-lines__segment--active' : ''} ${line.complete ? 'omniforge-flow-lines__segment--complete' : ''} omniforge-flow-lines__segment--${line.accent}`}
-                    key={line.id}
-                  />
-                ))}
-              </div>
-            </>
-          ) : null}
-        </article>
-
-        {(loading || error) && liveLogPreview.length > 0 ? (
-          <div className="omniforge-live-feed">
-            {liveLogPreview.map((entry) => (
-              <article className={`omniforge-live-feed__item omniforge-live-feed__item--${entry.tone}`} key={entry.id}>
-                <span>{entry.stageLabel}</span>
-                <p>{entry.shortMessage}</p>
-              </article>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="studio-status-stack">
-          {controlCenter.inspector.primaryCards.map((card) => (
-            <article className={`live-signal-card live-signal-card--${card.tone}`} key={card.label}>
-              <div className="live-signal-card__top">
-                <span>{card.label}</span>
-                <strong>{card.value}</strong>
-              </div>
-              <p>{card.detail}</p>
-            </article>
-          ))}
-        </div>
-
-        {controlCenter.inspector.sections.map((section) => {
-          const isExpanded = expandedInspectorSections[section.id] === true;
-
-          return (
-            <section className="inspector-disclosure" key={section.id}>
-              <button
-                aria-expanded={isExpanded}
-                className="inspector-disclosure__toggle"
-                onClick={() => toggleInspectorSection(section.id)}
-                type="button"
-              >
-                <div>
-                  <strong>{section.label}</strong>
-                  <span>{section.summary}</span>
-                </div>
-                <span className="panel-badge">{isExpanded ? 'Hide' : 'Show'}</span>
-              </button>
-
-              {isExpanded ? (
-                <div className="inspector-disclosure__body">
-                  {section.items.map((card) => (
-                    <article className={`live-signal-card live-signal-card--${card.tone ?? 'neutral'}`} key={`${section.id}-${card.label}-${card.value}`}>
-                      <div className="live-signal-card__top">
-                        <span>{card.label}</span>
-                        <strong>{card.value}</strong>
-                      </div>
-                      <p>{card.detail}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-
-        {(logs.length > 0 || loading) ? (
-          <section className="inspector-disclosure">
-            <button
-              aria-expanded={expandedInspectorSections.activity === true}
-              className="inspector-disclosure__toggle"
-              onClick={() => toggleInspectorSection('activity')}
-              type="button"
-            >
-              <div>
-                <strong>Activity log</strong>
-                <span>Open the full execution stream only when you need it.</span>
-              </div>
-              <span className="panel-badge">
-                {expandedInspectorSections.activity === true ? 'Hide' : 'Show'}
-              </span>
-            </button>
-
-            {expandedInspectorSections.activity === true ? (
-              <div className="inspector-disclosure__body">
-                <SystemConsole loading={loading} logs={logs} />
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </div>
-    </section>
-  );
 
   return (
     <div className="builder-shell">
@@ -1189,12 +1200,11 @@ export default function Builder() {
             placeholder: 'Build app, analyze URL, open project…',
           }}
           leftPanel={leftPanel}
+          minimalChrome
           modes={OMNIFORGE_INTERFACE_MODES}
           onModeChange={setActiveInterfaceMode}
-          rightPanel={rightPanel}
-          statusMeta={interfaceStatusMeta}
-          subtitle="Build, inspect, and publish from one focused AI workspace."
-          title={projectName || 'OmniForge Studio'}
+          subtitle=""
+          title={projectName || 'Build'}
         />
       </PlatformShell>
     </div>

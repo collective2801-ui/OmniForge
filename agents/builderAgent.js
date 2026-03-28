@@ -810,45 +810,76 @@ function buildPreviewHtml(intent) {
       ? dominantColor
       : '#38bdf8';
   const projectName = escapeHtml(intent.projectName ?? 'OmniForge Product');
-  const projectType = escapeHtml(titleCase(intent.projectType ?? 'web app'));
-  const summary = escapeHtml(intent.summary ?? 'A generated product preview');
-  const stack = intent.technicalDecisions ?? {};
-  const stackItems = [
-    stack.frontend ? `${titleCase(stack.frontend)} frontend` : null,
-    stack.backend && stack.backend !== 'none' ? `${titleCase(stack.backend)} backend` : null,
-    stack.database && stack.database !== 'none' ? `${titleCase(stack.database)} database` : null,
-    stack.deployment ? `${titleCase(stack.deployment)} deployment` : null,
-  ].filter(Boolean);
-  const featureCards = [
-    featureSet.has('auth')
-      ? {
-          title: 'Secure Access',
-          detail: 'Guided sign-in, onboarding, and operator sessions.',
-        }
-      : null,
-    featureSet.has('dashboard')
-      ? {
-          title: 'Live Dashboard',
-          detail: 'Metrics, activity tracking, and a clear progress loop.',
-        }
-      : null,
-    featureSet.has('payments')
-      ? {
-          title: 'Billing Ready',
-          detail: 'Stripe checkout and subscription lifecycle prepared.',
-        }
-      : null,
-    featureSet.has('file_uploads')
-      ? {
-          title: 'Uploads',
-          detail: 'Storage-ready flows for client files and supporting documents.',
-        }
-      : null,
-    {
-      title: 'Deployment',
-      detail: 'The generated app can be promoted from this preview into a live deployment.',
-    },
-  ].filter(Boolean);
+  const projectType = titleCase(intent.projectType ?? 'web app');
+  const summary = intent.summary ?? 'A generated product preview';
+  const sourceTokens = `${intent.projectType ?? ''} ${intent.summary ?? ''} ${(intent.features ?? []).join(' ')}`.toLowerCase();
+  const hasScanner = /\b(scan|scanner|barcode|camera|qr)\b/.test(sourceTokens);
+  const hasPayments =
+    featureSet.has('payments') || /\b(payment|billing|subscription|checkout|premium|cart)\b/.test(sourceTokens);
+  const hasAuth =
+    featureSet.has('auth') ||
+    featureSet.has('user_auth') ||
+    /\b(auth|login|account|session|user)\b/.test(sourceTokens);
+  const hasAdmin =
+    featureSet.has('admin_controls') ||
+    featureSet.has('user_management') ||
+    /\b(admin|administrator|operator|staff|management|backoffice)\b/.test(sourceTokens);
+  const hasNotifications =
+    featureSet.has('notifications') || /\b(notification|alert|reminder|message)\b/.test(sourceTokens);
+  const hasUploads =
+    featureSet.has('file_uploads') || /\b(upload|attachment|file|document|image)\b/.test(sourceTokens);
+  const hasDashboard =
+    featureSet.has('dashboard') || /\b(dashboard|analytics|reporting|insight|metrics)\b/.test(sourceTokens);
+  const isMobileLike =
+    intent.projectType === 'mobile_app' ||
+    /\b(mobile|scanner|camera|cart|profile|notification|expo)\b/.test(sourceTokens);
+  const primaryActionLabel = hasScanner
+    ? 'Open Scanner'
+    : hasPayments
+      ? 'Open Checkout'
+      : hasAdmin
+        ? 'Open Operations'
+        : 'Launch Workspace';
+  const heroTitle = hasScanner
+    ? 'Start Scanning'
+    : hasAdmin
+      ? 'Run Your Team'
+      : hasPayments
+        ? 'Convert New Revenue'
+        : 'Run the Product';
+  const heroDescription = hasScanner
+    ? 'Scan live inputs, review results, and route the next action from one interactive surface.'
+    : hasAdmin
+      ? 'Track workflow progress, unlock actions, and keep operators aligned without leaving the main workspace.'
+      : hasPayments
+        ? 'Move users from activation to paid conversion with a clear billing and upgrade path.'
+        : 'Everything important lives in one working product surface: actions, status, and the next task.';
+  const featureLabels = [...featureSet]
+    .slice(0, 6)
+    .map((feature) => titleCase(feature.replace(/_/g, ' ')));
+  const quickLinks = [
+    hasScanner ? 'Scanner' : 'Workspace',
+    hasDashboard ? 'Dashboard' : 'Activity',
+    hasPayments ? 'Billing' : 'Tasks',
+    hasAdmin ? 'Admin' : 'Profile',
+  ];
+  const metricCards = [
+    { label: hasScanner ? 'Scans today' : 'Tasks open', value: hasScanner ? '24' : '18' },
+    { label: hasPayments ? 'MRR' : 'Completions', value: hasPayments ? '$4.8k' : '86%' },
+    { label: hasNotifications ? 'Alerts' : 'Response time', value: hasNotifications ? '3' : '4.2m' },
+  ];
+  const activitySeed = [
+    hasScanner ? 'Product scan completed and categorized.' : 'Primary workflow completed and logged.',
+    hasAdmin ? 'Admin review queue updated with a new action item.' : 'Customer-facing workspace refreshed successfully.',
+    hasPayments ? 'Upgrade prompt converted a user into a paid plan.' : 'A follow-up task was scheduled for the next milestone.',
+  ];
+  const navItems = [
+    'Home',
+    hasScanner ? 'Scan' : 'Tasks',
+    hasDashboard ? 'History' : 'Reports',
+    hasPayments ? 'Billing' : 'Inbox',
+    hasAdmin ? 'Admin' : 'Settings',
+  ];
 
   return `<!doctype html>
 <html lang="en">
@@ -858,14 +889,18 @@ function buildPreviewHtml(intent) {
     <title>${projectName} Preview</title>
     <style>
       :root {
-        color-scheme: dark;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color-scheme: light;
+        font-family: Inter, "SF Pro Display", "Segoe UI", sans-serif;
         --accent: ${accentColor};
-        --surface: rgba(8, 15, 29, 0.88);
-        --surface-soft: rgba(15, 23, 42, 0.84);
-        --border: rgba(148, 163, 184, 0.16);
-        --text: #f8fbff;
-        --muted: #9fb1cb;
+        --accent-soft: color-mix(in srgb, ${accentColor} 14%, white);
+        --surface: #ffffff;
+        --surface-soft: #f3f5f8;
+        --surface-deep: #e9eef5;
+        --border: rgba(15, 23, 42, 0.08);
+        --text: #111827;
+        --muted: #6b7280;
+        --success: #16a34a;
+        --shadow: 0 22px 44px rgba(15, 23, 42, 0.14);
       }
 
       * {
@@ -874,147 +909,426 @@ function buildPreviewHtml(intent) {
 
       body {
         margin: 0;
-        min-height: 100vh;
         background:
-          radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 30%),
-          radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.16), transparent 28%),
-          linear-gradient(180deg, #050816 0%, #07111f 48%, #02050d 100%);
+          radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 32%),
+          linear-gradient(180deg, #edf2f7 0%, #dbe6f3 100%);
         color: var(--text);
       }
 
       main {
-        width: min(1160px, calc(100% - 40px));
+        width: 100%;
         margin: 0 auto;
-        padding: 28px 0 36px;
+        min-height: 100vh;
+        padding: ${isMobileLike ? '20px 18px 26px' : '24px 22px 30px'};
       }
 
-      .hero,
-      .panel {
-        border: 1px solid var(--border);
-        border-radius: 24px;
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .screen {
+        width: min(${isMobileLike ? '100%' : '1000px'}, 100%);
+        margin: 0 auto;
+        padding: ${isMobileLike ? '12px' : '18px'};
+        border-radius: ${isMobileLike ? '34px' : '32px'};
+        background: rgba(12, 20, 34, 0.96);
+        box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+      }
+
+      .screen-inner {
+        min-height: calc(100vh - 64px);
+        border-radius: ${isMobileLike ? '26px' : '24px'};
         background: var(--surface);
-        box-shadow: 0 24px 70px rgba(2, 6, 23, 0.32);
-        backdrop-filter: blur(18px);
+        overflow: hidden;
       }
 
-      .hero {
-        padding: 28px;
-        margin-bottom: 20px;
-      }
-
-      .eyebrow {
-        display: inline-flex;
-        margin-bottom: 12px;
-        color: var(--accent);
-        font-size: 12px;
+      .status-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 18px 0;
+        color: white;
+        font-size: 0.82rem;
         font-weight: 700;
-        letter-spacing: 0.14em;
+      }
+
+      .screen-body {
+        padding: 16px 16px 20px;
+      }
+
+      .app-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+
+      .app-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at 30% 30%, rgba(255,255,255,0.24), transparent 34%),
+          linear-gradient(135deg, var(--accent), #111827 80%);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.24);
+      }
+
+      .header-copy small {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--muted);
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+
+      .header-copy h1 {
+        margin: 0;
+        font-size: ${isMobileLike ? '1.95rem' : '2.2rem'};
+        line-height: 0.96;
+        letter-spacing: -0.05em;
+      }
+
+      .upgrade-chip,
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0.56rem 0.92rem;
+        background: rgba(17, 24, 39, 0.96);
+        color: white;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
       }
 
-      h1 {
-        margin: 0 0 10px;
-        font-size: clamp(2rem, 4vw, 3.4rem);
-        line-height: 0.96;
+      .hero-card {
+        position: relative;
+        overflow: hidden;
+        display: grid;
+        gap: 16px;
+        margin-bottom: 18px;
+        padding: 18px;
+        border-radius: 24px;
+        background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, #4f5d75), #64748b);
+        box-shadow: var(--shadow);
       }
 
-      p {
+      .hero-card::after {
+        content: '';
+        position: absolute;
+        right: -36px;
+        bottom: -42px;
+        width: 164px;
+        height: 164px;
+        border-radius: 999px;
+        background:
+          radial-gradient(circle at 35% 35%, rgba(255,255,255,0.28), transparent 38%),
+          radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 35%, #111827), transparent 72%);
+        filter: blur(0.2px);
+      }
+
+      .hero-copy {
+        position: relative;
+        z-index: 1;
+        max-width: 72%;
+      }
+
+      .hero-copy h2 {
+        margin: 0 0 8px;
+        font-size: ${isMobileLike ? '1.95rem' : '2.2rem'};
+        line-height: 0.96;
+        letter-spacing: -0.05em;
+        color: #0f172a;
+      }
+
+      .hero-copy p {
+        margin: 0;
+        color: rgba(15, 23, 42, 0.76);
+        line-height: 1.55;
+        font-weight: 520;
+      }
+
+      .hero-actions {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .primary-button,
+      .secondary-button,
+      .mini-link,
+      .nav-button {
+        transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+      }
+
+      .primary-button:hover,
+      .secondary-button:hover,
+      .mini-link:hover,
+      .nav-button:hover {
+        transform: translateY(-1px);
+      }
+
+      .primary-button {
+        min-height: 48px;
+        padding: 0 18px;
+        border-radius: 16px;
+        background: #2563eb;
+        color: white;
+        font-weight: 800;
+        box-shadow: 0 14px 26px rgba(37, 99, 235, 0.28);
+      }
+
+      .secondary-button {
+        min-height: 48px;
+        padding: 0 16px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.18);
+        color: #0f172a;
+        font-weight: 700;
+      }
+
+      .section {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .section-head h3 {
+        margin: 0;
+        font-size: 1.28rem;
+      }
+
+      .mini-link {
+        color: #2563eb;
+        background: transparent;
+        font-weight: 700;
+      }
+
+      .card,
+      .activity-card,
+      .workspace-panel {
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--surface-soft);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.44);
+      }
+
+      .activity-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .activity-card {
+        padding: 14px 16px;
+      }
+
+      .activity-card strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .activity-card p,
+      .workspace-panel p {
         margin: 0;
         color: var(--muted);
+        line-height: 1.5;
       }
 
-      .hero-grid,
-      .grid {
-        display: grid;
-        gap: 18px;
-      }
-
-      .hero-grid {
-        grid-template-columns: 1.5fr 1fr;
-        align-items: start;
-      }
-
-      .stack-list,
-      .feature-grid,
-      .signal-grid {
+      .metrics-grid,
+      .quick-grid {
         display: grid;
         gap: 12px;
       }
 
-      .stack-list {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        margin-top: 18px;
-      }
-
-      .stack-pill,
-      .feature-pill {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 0.5rem 0.8rem;
-        background: rgba(56, 189, 248, 0.12);
-        color: #d8f4ff;
-        font-size: 0.92rem;
-      }
-
-      .grid {
-        grid-template-columns: 1.2fr 1fr;
-      }
-
-      .panel {
-        padding: 22px;
-      }
-
-      .panel h2 {
-        margin: 0 0 12px;
-        font-size: 1.08rem;
-      }
-
-      .feature-grid {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      }
-
-      .feature-card,
-      .signal-card,
-      .roadmap-item {
-        border-radius: 18px;
-        border: 1px solid rgba(148, 163, 184, 0.12);
-        background: var(--surface-soft);
-        padding: 16px;
-      }
-
-      .feature-card strong,
-      .signal-card strong,
-      .roadmap-item strong {
-        display: block;
-        margin-bottom: 8px;
-      }
-
-      .signal-grid {
+      .metrics-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
-      .signal-card span {
+      .metric-card {
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--surface);
+      }
+
+      .metric-card span {
         display: block;
-        font-size: 0.82rem;
+        margin-bottom: 6px;
         color: var(--muted);
-        margin-bottom: 8px;
+        font-size: 0.82rem;
       }
 
-      .signal-card strong {
-        font-size: 1.6rem;
-        color: white;
+      .metric-card strong {
+        font-size: 1.35rem;
+        letter-spacing: -0.03em;
       }
 
-      .roadmap {
+      .quick-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .quick-link {
+        display: grid;
+        gap: 6px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--surface);
+        text-align: left;
+      }
+
+      .quick-link__icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: color-mix(in srgb, var(--accent) 14%, white);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .workspace-panel {
+        padding: 18px;
+      }
+
+      .workspace-panel__header {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .workspace-panel__header h3 {
+        margin: 0 0 4px;
+        font-size: 1.18rem;
+      }
+
+      .workspace-content {
         display: grid;
         gap: 12px;
       }
 
-      @media (max-width: 900px) {
-        .hero-grid,
-        .grid,
-        .signal-grid {
+      .state-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.58);
+      }
+
+      .state-row strong {
+        display: block;
+      }
+
+      .state-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--success);
+      }
+
+      .input-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .input-row input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid rgba(15, 23, 42, 0.1);
+        border-radius: 14px;
+        padding: 0.95rem 1rem;
+        background: rgba(255,255,255,0.86);
+        color: var(--text);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .bottom-nav {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        padding: 12px 12px 14px;
+        border-top: 1px solid rgba(15, 23, 42, 0.06);
+        background: rgba(255,255,255,0.96);
+      }
+
+      .nav-button {
+        display: grid;
+        justify-items: center;
+        gap: 5px;
+        padding: 8px 6px;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .nav-button.active {
+        color: #2563eb;
+        background: rgba(37, 99, 235, 0.08);
+      }
+
+      .nav-button__icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(15, 23, 42, 0.06);
+      }
+
+      .nav-button.active .nav-button__icon {
+        background: rgba(37, 99, 235, 0.14);
+      }
+
+      .banner {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--accent) 12%, white);
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      @media (max-width: 720px) {
+        .hero-copy {
+          max-width: 100%;
+        }
+
+        .metrics-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -1022,79 +1336,296 @@ function buildPreviewHtml(intent) {
   </head>
   <body>
     <main>
-      <section class="hero">
-        <div class="eyebrow">Rendered Product Preview</div>
-        <div class="hero-grid">
-          <div>
-            <h1>${projectName}</h1>
-            <p>${summary}</p>
-            <div class="stack-list">
-              ${stackItems.map((item) => `<span class="stack-pill">${escapeHtml(item)}</span>`).join('')}
-            </div>
-          </div>
-          <div class="panel">
-            <h2>Product Shape</h2>
-            <div class="feature-grid">
-              <span class="feature-pill">${projectType}</span>
-              ${Array.from(featureSet).map((feature) => `<span class="feature-pill">${escapeHtml(titleCase(feature))}</span>`).join('')}
-            </div>
-          </div>
+      <section class="screen">
+        <div class="status-bar">
+          <span>Rendered product preview</span>
+          <span>${escapeHtml(projectType)}</span>
         </div>
-      </section>
+        <div class="screen-inner">
+          <div class="screen-body">
+            <header class="app-header">
+              <div class="app-title">
+                <div class="avatar" aria-hidden="true"></div>
+                <div class="header-copy">
+                  <small>${hasAuth ? 'Hello there!' : 'Ready to launch'}</small>
+                  <h1>${projectName}</h1>
+                </div>
+              </div>
+              <button class="${hasPayments ? 'upgrade-chip' : 'pill'}" id="top-action" type="button">
+                ${hasPayments ? 'Upgrade' : 'Live Ready'}
+              </button>
+            </header>
 
-      <section class="grid">
-        <section class="panel">
-          <h2>Core Experience</h2>
-          <div class="feature-grid">
-            ${featureCards.map((card) => `
-              <article class="feature-card">
-                <strong>${escapeHtml(card.title)}</strong>
-                <p>${escapeHtml(card.detail)}</p>
-              </article>
-            `).join('')}
+            <section class="hero-card">
+              <div class="hero-copy">
+                <h2>${escapeHtml(heroTitle)}</h2>
+                <p>${escapeHtml(heroDescription)}</p>
+              </div>
+              <div class="hero-actions">
+                <button class="primary-button" id="primary-action" type="button">${escapeHtml(primaryActionLabel)}</button>
+                <button class="secondary-button" id="secondary-action" type="button">View ${hasDashboard ? 'Dashboard' : 'Details'}</button>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h3>Recent Activity</h3>
+                <button class="mini-link" id="refresh-activity" type="button">Refresh</button>
+              </div>
+              <div class="activity-list" id="activity-list"></div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h3>Performance</h3>
+                <span class="pill">${escapeHtml(projectType)}</span>
+              </div>
+              <div class="metrics-grid" id="metrics-grid"></div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h3>Quick Links</h3>
+                <button class="mini-link" id="toggle-panel" type="button">Open</button>
+              </div>
+              <div class="quick-grid" id="quick-grid"></div>
+            </section>
+
+            <section class="section">
+              <div class="workspace-panel">
+                <div class="workspace-panel__header">
+                  <div>
+                    <h3 id="workspace-title">Working Surface</h3>
+                    <p id="workspace-summary">${escapeHtml(summary)}</p>
+                  </div>
+                  <span class="pill" id="workspace-pill">Ready</span>
+                </div>
+                <div class="workspace-content" id="workspace-content"></div>
+              </div>
+            </section>
           </div>
-        </section>
 
-        <section class="panel">
-          <h2>What Users Keep Watching</h2>
-          <div class="signal-grid">
-            <article class="signal-card">
-              <span>Activation</span>
-              <strong>94%</strong>
-              <p>Users hit the first meaningful screen quickly.</p>
-            </article>
-            <article class="signal-card">
-              <span>Retention</span>
-              <strong>4.2x</strong>
-              <p>Progress loops and reminders pull users back in.</p>
-            </article>
-            <article class="signal-card">
-              <span>Momentum</span>
-              <strong>7 Days</strong>
-              <p>Habit-forming updates and visible wins sustain usage.</p>
-            </article>
-          </div>
-        </section>
-      </section>
-
-      <section class="panel" style="margin-top: 20px;">
-        <h2>Execution Roadmap</h2>
-        <div class="roadmap">
-          <article class="roadmap-item">
-            <strong>1. Build</strong>
-            <p>Core product files, backend surface, and data schema are generated.</p>
-          </article>
-          <article class="roadmap-item">
-            <strong>2. Integrate</strong>
-            <p>Payments, auth, storage, and environment configuration are attached when needed.</p>
-          </article>
-          <article class="roadmap-item">
-            <strong>3. Launch</strong>
-            <p>Deployment, domain, runtime diagnostics, and business assets carry the product into market.</p>
-          </article>
+          <nav class="bottom-nav" id="bottom-nav"></nav>
         </div>
       </section>
     </main>
+    <script>
+      const state = {
+        signedIn: ${hasAuth ? 'false' : 'true'},
+        premium: false,
+        activeTab: 'Home',
+        activity: ${JSON.stringify(activitySeed)},
+        metrics: ${JSON.stringify(metricCards)},
+        features: ${JSON.stringify(featureLabels)},
+        quickLinks: ${JSON.stringify(quickLinks)},
+        alerts: ${hasNotifications ? 3 : 0},
+        uploads: ${hasUploads ? 2 : 0},
+      };
+
+      const navItems = ${JSON.stringify(navItems)};
+      const hasScanner = ${hasScanner ? 'true' : 'false'};
+      const hasPayments = ${hasPayments ? 'true' : 'false'};
+      const hasAuth = ${hasAuth ? 'true' : 'false'};
+      const hasAdmin = ${hasAdmin ? 'true' : 'false'};
+      const hasNotifications = ${hasNotifications ? 'true' : 'false'};
+      const hasUploads = ${hasUploads ? 'true' : 'false'};
+
+      const activityListEl = document.getElementById('activity-list');
+      const metricsGridEl = document.getElementById('metrics-grid');
+      const quickGridEl = document.getElementById('quick-grid');
+      const workspaceTitleEl = document.getElementById('workspace-title');
+      const workspaceSummaryEl = document.getElementById('workspace-summary');
+      const workspaceContentEl = document.getElementById('workspace-content');
+      const workspacePillEl = document.getElementById('workspace-pill');
+      const bottomNavEl = document.getElementById('bottom-nav');
+      const topActionEl = document.getElementById('top-action');
+
+      function renderActivity() {
+        activityListEl.innerHTML = state.activity.map((item, index) => '<article class="activity-card"><strong>Update ' + (index + 1) + '</strong><p>' + item + '</p></article>').join('');
+      }
+
+      function renderMetrics() {
+        metricsGridEl.innerHTML = state.metrics.map((card) => '<article class="metric-card"><span>' + card.label + '</span><strong>' + card.value + '</strong></article>').join('');
+      }
+
+      function renderQuickLinks() {
+        quickGridEl.innerHTML = state.quickLinks.map((label) => '<button class="quick-link" data-link=\"' + label + '\" type=\"button\"><span class="quick-link__icon">' + label.charAt(0) + '</span><strong>' + label + '</strong><p>Open the ' + label.toLowerCase() + ' workflow.</p></button>').join('');
+      }
+
+      function renderBottomNav() {
+        bottomNavEl.innerHTML = navItems.map((label) => '<button class=\"nav-button' + (state.activeTab === label ? ' active' : '') + '\" data-tab=\"' + label + '\" type=\"button\"><span class=\"nav-button__icon\">' + label.charAt(0) + '</span><span>' + label + '</span></button>').join('');
+      }
+
+      function renderWorkspace() {
+        const tab = state.activeTab;
+
+        if (tab === 'Home') {
+          workspaceTitleEl.textContent = state.signedIn ? 'Live workspace' : 'Access required';
+          workspaceSummaryEl.textContent = state.signedIn
+            ? 'This interactive preview is simulating the main product surface with working state changes.'
+            : 'Sign in to unlock the main workflow and feature actions.';
+          workspacePillEl.textContent = state.signedIn ? 'Online' : 'Locked';
+          workspaceContentEl.innerHTML = state.signedIn
+            ? '<div class=\"state-row\"><div><strong>Main workflow</strong><p>' + ${JSON.stringify(heroDescription)} + '</p></div><span class=\"state-dot\"></span></div><div class=\"pill-row\">' + state.features.map((feature) => '<span class=\"pill\">' + feature + '</span>').join('') + '</div>'
+            : '<div class=\"input-row\"><input id=\"email-input\" placeholder=\"operator@company.com\" /><button class=\"primary-button\" id=\"sign-in-button\" type=\"button\">Sign In</button></div><div class=\"banner\">Use the interactive demo sign-in to unlock the preview workflow.</div>';
+          return;
+        }
+
+        if (tab === 'Scan' || tab === 'Tasks') {
+          workspaceTitleEl.textContent = hasScanner ? 'Scanner workflow' : 'Task workspace';
+          workspaceSummaryEl.textContent = hasScanner
+            ? 'Tap the scanner action to simulate a live capture and route the result.'
+            : 'Track the next action, mark it complete, and keep the queue moving.';
+          workspacePillEl.textContent = hasScanner ? 'Camera ready' : 'Queued';
+          workspaceContentEl.innerHTML = hasScanner
+            ? '<div class=\"state-row\"><div><strong>Last scan</strong><p>' + (state.lastScan || 'No item scanned yet. Use Open Scanner to simulate one.') + '</p></div><span class=\"state-dot\"></span></div><button class=\"primary-button\" id=\"simulate-scan\" type=\"button\">Simulate Scan</button>'
+            : '<div class=\"state-row\"><div><strong>Current task</strong><p>Review incoming record, confirm status, and assign next owner.</p></div><span class=\"state-dot\"></span></div><button class=\"primary-button\" id=\"complete-task\" type=\"button\">Mark Completed</button>';
+          return;
+        }
+
+        if (tab === 'Billing') {
+          workspaceTitleEl.textContent = 'Billing and conversion';
+          workspaceSummaryEl.textContent = hasPayments
+            ? 'Upgrade prompts and billing flows are interactive inside the preview.'
+            : 'Billing is available when a subscription or checkout flow is attached.';
+          workspacePillEl.textContent = state.premium ? 'Premium' : 'Starter';
+          workspaceContentEl.innerHTML = hasPayments
+            ? '<div class=\"state-row\"><div><strong>Plan</strong><p>' + (state.premium ? 'Premium plan is active.' : 'Starter plan is active.') + '</p></div><span class=\"state-dot\"></span></div><button class=\"primary-button\" id=\"upgrade-plan\" type=\"button\">' + (state.premium ? 'Manage Plan' : 'Upgrade Now') + '</button>'
+            : '<div class=\"banner\">No billing workflow is required for this product concept.</div>';
+          return;
+        }
+
+        if (tab === 'Admin') {
+          workspaceTitleEl.textContent = hasAdmin ? 'Admin operations' : 'Settings';
+          workspaceSummaryEl.textContent = hasAdmin
+            ? 'Manage operators, approvals, and exception handling from one place.'
+            : 'Adjust product settings and notification preferences.';
+          workspacePillEl.textContent = hasAdmin ? 'Operator' : 'Configured';
+          workspaceContentEl.innerHTML = hasAdmin
+            ? '<div class=\"state-row\"><div><strong>Operator queue</strong><p>2 clients need approval and 1 task is waiting for staff review.</p></div><span class=\"state-dot\"></span></div><button class=\"primary-button\" id=\"approve-item\" type=\"button\">Approve next item</button>'
+            : '<div class=\"state-row\"><div><strong>Notifications</strong><p>' + (hasNotifications ? 'Alerts are on for milestone changes.' : 'Notifications are currently quiet.') + '</p></div><span class=\"state-dot\"></span></div>';
+          return;
+        }
+
+        workspaceTitleEl.textContent = 'History';
+        workspaceSummaryEl.textContent = 'Review the latest product events and operator actions.';
+        workspacePillEl.textContent = 'Stable';
+        workspaceContentEl.innerHTML = '<div class=\"activity-list\">' + state.activity.map((item) => '<article class=\"activity-card\"><strong>Recorded</strong><p>' + item + '</p></article>').join('') + '</div>';
+      }
+
+      function refreshPreview() {
+        state.activity.unshift('Preview refreshed at ' + new Date().toLocaleTimeString() + '.');
+        state.activity = state.activity.slice(0, 4);
+        renderActivity();
+        renderWorkspace();
+      }
+
+      function bindInteractiveControls() {
+        document.getElementById('primary-action')?.addEventListener('click', () => {
+          if (hasScanner) {
+            state.activeTab = 'Scan';
+            state.lastScan = 'Organic snack bar · Health score 87';
+          } else if (hasPayments) {
+            state.activeTab = 'Billing';
+          } else if (hasAdmin) {
+            state.activeTab = 'Admin';
+          } else {
+            state.activeTab = 'Tasks';
+          }
+          renderBottomNav();
+          renderWorkspace();
+        });
+
+        document.getElementById('secondary-action')?.addEventListener('click', () => {
+          state.activeTab = hasDashboard ? 'History' : 'Home';
+          renderBottomNav();
+          renderWorkspace();
+        });
+
+        document.getElementById('refresh-activity')?.addEventListener('click', refreshPreview);
+        document.getElementById('toggle-panel')?.addEventListener('click', () => {
+          state.activeTab = hasAdmin ? 'Admin' : hasPayments ? 'Billing' : 'Tasks';
+          renderBottomNav();
+          renderWorkspace();
+        });
+
+        quickGridEl.querySelectorAll('[data-link]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const label = button.getAttribute('data-link') || 'Home';
+            state.activeTab = label === 'Scanner' ? 'Scan' : label;
+            renderBottomNav();
+            renderWorkspace();
+          });
+        });
+
+        bottomNavEl.querySelectorAll('[data-tab]').forEach((button) => {
+          button.addEventListener('click', () => {
+            state.activeTab = button.getAttribute('data-tab') || 'Home';
+            renderBottomNav();
+            renderWorkspace();
+          });
+        });
+
+        topActionEl?.addEventListener('click', () => {
+          if (hasPayments) {
+            state.premium = !state.premium;
+            renderWorkspace();
+          } else if (hasAuth) {
+            state.signedIn = !state.signedIn;
+            topActionEl.textContent = state.signedIn ? 'Signed In' : 'Live Ready';
+            renderWorkspace();
+          }
+        });
+
+        document.getElementById('sign-in-button')?.addEventListener('click', () => {
+          state.signedIn = true;
+          renderWorkspace();
+          bindInteractiveControls();
+        });
+
+        document.getElementById('simulate-scan')?.addEventListener('click', () => {
+          state.lastScan = 'Fresh produce item · Suggested healthier swap available';
+          state.activity.unshift('A new scan result was captured and routed for review.');
+          state.activity = state.activity.slice(0, 4);
+          renderActivity();
+          renderWorkspace();
+          bindInteractiveControls();
+        });
+
+        document.getElementById('complete-task')?.addEventListener('click', () => {
+          state.activity.unshift('The top task was completed and the queue advanced.');
+          state.activity = state.activity.slice(0, 4);
+          renderActivity();
+          renderWorkspace();
+          bindInteractiveControls();
+        });
+
+        document.getElementById('upgrade-plan')?.addEventListener('click', () => {
+          state.premium = true;
+          renderWorkspace();
+          bindInteractiveControls();
+        });
+
+        document.getElementById('approve-item')?.addEventListener('click', () => {
+          state.activity.unshift('An admin approval was completed in the operations panel.');
+          state.activity = state.activity.slice(0, 4);
+          renderActivity();
+          renderWorkspace();
+          bindInteractiveControls();
+        });
+      }
+
+      function renderAll() {
+        renderActivity();
+        renderMetrics();
+        renderQuickLinks();
+        renderBottomNav();
+        renderWorkspace();
+        bindInteractiveControls();
+      }
+
+      renderAll();
+    </script>
   </body>
 </html>
 `;

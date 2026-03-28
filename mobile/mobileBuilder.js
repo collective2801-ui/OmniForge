@@ -8,6 +8,7 @@ import {
   writeFileSafe,
   writeJsonSafe,
 } from '../engine/fileSystem.js';
+import { buildProductScaffold } from './productScaffold.js';
 
 const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = 5 * 60 * 1000;
@@ -106,6 +107,13 @@ function resolveConfig(projectPath, config = {}) {
       : slug,
     platforms: DEFAULT_PLATFORMS,
     features,
+    publicRuntimeEnv: config.integrationConfig?.publicRuntimeEnv ?? {},
+    summary:
+      typeof config.summary === 'string' && config.summary.trim().length > 0
+        ? config.summary.trim()
+        : typeof config.intent?.summary === 'string' && config.intent.summary.trim().length > 0
+          ? config.intent.summary.trim()
+          : '',
     iosBundleIdentifier:
       typeof config.iosBundleIdentifier === 'string' && config.iosBundleIdentifier.trim().length > 0
         ? config.iosBundleIdentifier.trim()
@@ -580,7 +588,8 @@ export async function buildMobileApp(projectPath, config = {}) {
 
   const resolvedConfig = resolveConfig(normalizedProjectPath, config);
   const mobileRoot = path.join(normalizedProjectPath, 'mobile');
-  const buildCommands = ['npx expo prebuild', 'npx expo export'];
+  const scaffold = buildProductScaffold(resolvedConfig);
+  const buildCommands = scaffold.buildCommands;
 
   await emitProgress(config.onProgress, 'mobile_build_started', {
     projectName: resolvedConfig.appName,
@@ -590,86 +599,14 @@ export async function buildMobileApp(projectPath, config = {}) {
   });
 
   try {
-    await ensureDirectory(mobileRoot);
-    await ensureDirectory(path.join(mobileRoot, 'src', 'navigation'));
-    await ensureDirectory(path.join(mobileRoot, 'src', 'screens'));
-    await ensureDirectory(path.join(mobileRoot, 'assets'));
-    await ensureDirectory(path.join(mobileRoot, 'builds', 'android'));
-    await ensureDirectory(path.join(mobileRoot, 'builds', 'ios'));
+    for (const directory of scaffold.directories) {
+      await ensureDirectory(path.join(normalizedProjectPath, directory));
+    }
 
-    const filesToWrite = [
-      {
-        path: 'mobile/package.json',
-        absolutePath: path.join(mobileRoot, 'package.json'),
-        type: 'json',
-        content: buildPackageJson(resolvedConfig),
-      },
-      {
-        path: 'mobile/app.json',
-        absolutePath: path.join(mobileRoot, 'app.json'),
-        type: 'json',
-        content: buildAppJson(resolvedConfig),
-      },
-      {
-        path: 'mobile/eas.json',
-        absolutePath: path.join(mobileRoot, 'eas.json'),
-        type: 'json',
-        content: buildEasJson(),
-      },
-      {
-        path: 'mobile/App.js',
-        absolutePath: path.join(mobileRoot, 'App.js'),
-        type: 'text',
-        content: createAppTemplate(resolvedConfig),
-      },
-      {
-        path: 'mobile/src/navigation/AppNavigator.js',
-        absolutePath: path.join(mobileRoot, 'src', 'navigation', 'AppNavigator.js'),
-        type: 'text',
-        content: createNavigationTemplate(resolvedConfig),
-      },
-      {
-        path: 'mobile/src/screens/DashboardScreen.js',
-        absolutePath: path.join(mobileRoot, 'src', 'screens', 'DashboardScreen.js'),
-        type: 'text',
-        content: createDashboardScreenTemplate(resolvedConfig),
-      },
-      {
-        path: 'mobile/src/screens/AuthScreen.js',
-        absolutePath: path.join(mobileRoot, 'src', 'screens', 'AuthScreen.js'),
-        type: 'text',
-        content: createAuthScreenTemplate(),
-      },
-      {
-        path: 'mobile/src/screens/BillingScreen.js',
-        absolutePath: path.join(mobileRoot, 'src', 'screens', 'BillingScreen.js'),
-        type: 'text',
-        content: createBillingScreenTemplate(),
-      },
-      {
-        path: 'mobile/src/screens/SettingsScreen.js',
-        absolutePath: path.join(mobileRoot, 'src', 'screens', 'SettingsScreen.js'),
-        type: 'text',
-        content: createSettingsScreenTemplate(),
-      },
-      {
-        path: 'mobile/assets/branding.json',
-        absolutePath: path.join(mobileRoot, 'assets', 'branding.json'),
-        type: 'json',
-        content: {
-          appName: resolvedConfig.appName,
-          accentColor: '#0ea5e9',
-          backgroundColor: '#020617',
-          generatedAt: new Date().toISOString(),
-        },
-      },
-      {
-        path: 'mobile/README.md',
-        absolutePath: path.join(mobileRoot, 'README.md'),
-        type: 'text',
-        content: createReadmeTemplate(resolvedConfig, buildCommands),
-      },
-    ];
+    const filesToWrite = scaffold.files.map((file) => ({
+      ...file,
+      absolutePath: path.join(normalizedProjectPath, file.path),
+    }));
 
     for (const file of filesToWrite) {
       if (file.type === 'json') {
@@ -707,6 +644,23 @@ export async function buildMobileApp(projectPath, config = {}) {
       resolvedConfig.executeBuild === true
         ? commandResults.every((result) => result.success !== false)
         : true;
+    const expoGoUrl =
+      typeof resolvedConfig.publicRuntimeEnv?.EXPO_PUBLIC_LAUNCH_URL === 'string' &&
+      resolvedConfig.publicRuntimeEnv.EXPO_PUBLIC_LAUNCH_URL.trim().length > 0
+        ? resolvedConfig.publicRuntimeEnv.EXPO_PUBLIC_LAUNCH_URL.trim()
+        : typeof resolvedConfig.publicRuntimeEnv?.EXPO_GO_URL === 'string' &&
+            resolvedConfig.publicRuntimeEnv.EXPO_GO_URL.trim().length > 0
+          ? resolvedConfig.publicRuntimeEnv.EXPO_GO_URL.trim()
+          : '';
+    const appUrl =
+      typeof resolvedConfig.publicRuntimeEnv?.APP_URL === 'string' &&
+      resolvedConfig.publicRuntimeEnv.APP_URL.trim().length > 0
+        ? resolvedConfig.publicRuntimeEnv.APP_URL.trim()
+        : typeof resolvedConfig.publicRuntimeEnv?.PUBLIC_APP_URL === 'string' &&
+            resolvedConfig.publicRuntimeEnv.PUBLIC_APP_URL.trim().length > 0
+          ? resolvedConfig.publicRuntimeEnv.PUBLIC_APP_URL.trim()
+          : '';
+    const qrTarget = expoGoUrl || appUrl;
     const result = {
       generatedAt: new Date().toISOString(),
       status: buildSucceeded ? 'ready' : 'prepared',
@@ -721,6 +675,21 @@ export async function buildMobileApp(projectPath, config = {}) {
       slug: resolvedConfig.slug,
       iosBundleIdentifier: resolvedConfig.iosBundleIdentifier,
       androidPackage: resolvedConfig.androidPackage,
+      nativeCapabilities: scaffold.nativeProfile ?? {},
+      routeManifest: scaffold.routeManifest ?? [],
+      runtimeConfig: {
+        publicRuntimeEnv: resolvedConfig.publicRuntimeEnv,
+      },
+      access: {
+        appUrl,
+        expoGoUrl,
+        qrTarget,
+        instructions: expoGoUrl
+          ? 'Scan the Expo Go QR code to open the generated mobile build.'
+          : appUrl
+            ? 'Open the public app URL on your phone while native store packages are prepared.'
+            : 'Run expo start or configure an Expo launch URL to generate a live QR handoff.',
+      },
       buildCommands: commandResults,
       artifacts: {
         exportPath: path.join(mobileRoot, 'dist'),

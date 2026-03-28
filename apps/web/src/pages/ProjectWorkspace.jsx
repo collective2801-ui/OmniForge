@@ -390,7 +390,7 @@ export default function ProjectWorkspace() {
                       <iframe
                         className="product-preview__frame"
                         loading="lazy"
-                        sandbox=""
+                        sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-scripts"
                         srcDoc={preview.html}
                         title={preview.title}
                       />
