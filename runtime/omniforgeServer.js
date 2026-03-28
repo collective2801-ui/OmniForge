@@ -1921,5 +1921,5 @@ if (!masterAccountSeed.ok && process.env.MASTER_EMAIL?.trim()) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`OmniForge server listening on http://${HOST}:${PORT}`);
+  console.log(`Backend listening on ${PORT}`);
 });
