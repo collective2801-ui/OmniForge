@@ -110,7 +110,7 @@ function getAllowedOrigins() {
   return unique([
     ...DEFAULT_ALLOWED_ORIGINS,
     ...(process.env.ALLOWED_ORIGINS?.split(',').map((entry) => entry.trim()) ?? []),
-    process.env.PLATFORM_URL?.trim() ?? '',
+    process.env.FRONTEND_URL?.trim() || process.env.PLATFORM_URL?.trim() || '',
   ]);
 }
 
@@ -1623,7 +1623,7 @@ async function handleBillingRequest(request, response, url) {
       const result = await createCheckoutSession({
         user: sessionRecord.user,
         planId: typeof payload.planId === 'string' ? payload.planId.trim() : '',
-        origin: request.headers.origin ?? process.env.PLATFORM_URL ?? '',
+        origin: request.headers.origin ?? process.env.FRONTEND_URL ?? process.env.PLATFORM_URL ?? '',
       });
       sendJson(response, 200, result);
     } catch (error) {

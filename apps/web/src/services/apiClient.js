@@ -21,7 +21,7 @@ function inferProductionApiBaseUrl() {
 }
 
 export function getApiBaseUrl() {
-  return normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || inferProductionApiBaseUrl());
+  return normalizeBaseUrl(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.NEXT_PUBLIC_API_URL || inferProductionApiBaseUrl());
 }
 
 export function buildApiUrl(path) {

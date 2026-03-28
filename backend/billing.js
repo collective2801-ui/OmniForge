@@ -56,11 +56,11 @@ const BILLING_PLANS = Object.freeze([
 
 function getStripeConfig() {
   return {
-    secretKey: process.env.STRIPE_SECRET_KEY?.trim() ?? '',
+    secretKey: process.env.STRIPE_SECRET?.trim() || process.env.STRIPE_SECRET_KEY?.trim() || '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() ?? '',
     proPriceId: process.env.STRIPE_PRICE_PRO?.trim() ?? '',
     enterprisePriceId: process.env.STRIPE_PRICE_ENTERPRISE?.trim() ?? '',
-    platformUrl: process.env.PLATFORM_URL?.trim() ?? '',
+    platformUrl: process.env.FRONTEND_URL?.trim() || process.env.PLATFORM_URL?.trim() || '',
   };
 }
 
@@ -100,7 +100,7 @@ async function stripeRequest(pathname, {
   const { secretKey } = getStripeConfig();
 
   if (!secretKey) {
-    throw new Error('Stripe is not configured. Set STRIPE_SECRET_KEY first.');
+    throw new Error('Stripe is not configured. Set STRIPE_SECRET or STRIPE_SECRET_KEY first.');
   }
 
   const response = await fetch(`${STRIPE_API_URL}${pathname}`, {
