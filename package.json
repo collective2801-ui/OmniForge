@@ -1,0 +1,35 @@
+{
+  "name": "omniforge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "workspaces": [
+    "apps/web"
+  ],
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "openai": "^6.33.0",
+    "puppeteer": "^24.40.0",
+    "stripe": "^21.0.1",
+    "uuid": "^13.0.0"
+  },
+  "scripts": {
+    "server": "node index.js",
+    "start": "node server.js",
+    "launch": "zsh runtime/launch-omniforge.command",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build:web": "npm run build --workspace apps/web",
+    "preview:web": "npm run preview --workspace apps/web"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

@@ -1,0 +1,1003 @@
+import OpenAI from 'openai';
+import { callAI } from './aiClient.js';
+import { validateFiles } from './validator.js';
+
+let openaiClient = null;
+
+function assertIntent(intent) {
+  if (!intent || typeof intent !== 'object') {
+    throw new TypeError('Intent must be an object.');
+  }
+
+  if (typeof intent.goal !== 'string' || intent.goal.trim().length === 0) {
+    throw new TypeError('Intent goal is required for code generation.');
+  }
+}
+
+function assertPrompt(prompt) {
+  if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+    throw new TypeError('Code generation prompt must be a non-empty string.');
+  }
+}
+
+function getOpenAIClient() {
+  if (openaiClient) {
+    return openaiClient;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for generateCode(prompt).');
+  }
+
+  openaiClient = new OpenAI({
+    apiKey,
+  });
+
+  return openaiClient;
+}
+
+function extractJSONArray(rawText) {
+  if (typeof rawText !== 'string') {
+    throw new TypeError('AI code generation output must be a string.');
+  }
+
+  const startIndex = rawText.indexOf('[');
+  const endIndex = rawText.lastIndexOf(']');
+
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    throw new Error('Unable to locate a JSON array in AI code output.');
+  }
+
+  return JSON.parse(rawText.slice(startIndex, endIndex + 1));
+}
+
+function buildCodeGenerationPrompt(intent) {
+  return `
+You are OmniForge's autonomous code generation engine.
+
+Generate a cohesive, production-minded file set for the following intent.
+
+Intent:
+${JSON.stringify(intent, null, 2)}
+
+Strict rules:
+- Return only a JSON array.
+- Every array item must have this exact shape:
+  {
+    "path": "relative/file/path.ext",
+    "content": "FULL FILE CONTENT"
+  }
+- Paths must be relative and must not begin with /, ~, or ..
+- Every file content must be complete and immediately usable.
+- Do not include markdown fences.
+- Do not include commentary.
+- Do not include placeholders or TODO markers.
+- Prefer a runnable or execution-ready project slice.
+
+Generate the smallest complete file set that satisfies the intent while remaining extensible.
+`.trim();
+}
+
+function buildFeatureFlagArray(features) {
+  return JSON.stringify(features, null, 2);
+}
+
+function buildWebAppFallback(intent) {
+  const projectName = intent.projectName ?? 'omniforge-app';
+  const featureFlags = intent.features ?? [];
+  const preferredUiStyle = intent.preferences?.preferredUiStyle ?? '';
+  const referenceBranding = intent.referenceContext?.branding ?? {};
+  const referenceSummary = intent.referenceContext?.summary ?? '';
+  const referenceSummaryLiteral = JSON.stringify(referenceSummary);
+  const dominantReferenceColor = Array.isArray(referenceBranding?.dominantColors) &&
+    referenceBranding.dominantColors.length > 0
+      ? referenceBranding.dominantColors[0]
+      : '';
+  const includesAuth = featureFlags.includes('auth');
+  const includesTodo = featureFlags.includes('todo_management');
+  const includesDashboard =
+    featureFlags.includes('dashboard') || featureFlags.includes('admin_controls');
+  const includesNotifications = featureFlags.includes('notifications');
+  const includesSearch = featureFlags.includes('search');
+  const prefersFintech = preferredUiStyle === 'fintech';
+  const prefersBold = preferredUiStyle === 'bold';
+  const heroLabel = preferredUiStyle
+    ? `OmniForge ${preferredUiStyle.replace(/_/g, ' ')} memory build`
+    : 'OmniForge Generated Project';
+  const backgroundStart = prefersFintech ? '#041512' : prefersBold ? '#180802' : '#07111f';
+  const backgroundMid = prefersFintech ? '#06211d' : prefersBold ? '#26110a' : '#08101b';
+  const backgroundEnd = prefersFintech ? '#020907' : prefersBold ? '#0f0502' : '#05070b';
+  const accentPrimary = dominantReferenceColor || (prefersFintech ? '#14b8a6' : prefersBold ? '#f97316' : '#0ea5e9');
+  const accentSecondary = prefersFintech ? '#22c55e' : prefersBold ? '#dc2626' : '#2563eb';
+
+  const appSource = `import { useState } from 'react';
+import './styles.css';
+
+const projectName = ${JSON.stringify(projectName)};
+const featureFlags = new Set(${buildFeatureFlagArray(featureFlags)});
+const initialTodos = [
+  { id: 1, label: 'Review the generated project structure', completed: true },
+  { id: 2, label: 'Verify authentication and task flows', completed: false },
+  { id: 3, label: 'Prepare the app for deployment', completed: false },
+];
+
+const dashboardCards = [
+  { label: 'Active Workflows', value: '04' },
+  { label: 'Automation Readiness', value: '92%' },
+  { label: 'Pending Reviews', value: '03' },
+];
+
+export default function App() {
+  const [session, setSession] = useState(
+    featureFlags.has('auth')
+      ? null
+      : { name: 'OmniForge Builder', email: 'builder@omniforge.local' },
+  );
+  const [credentials, setCredentials] = useState({
+    email: 'builder@omniforge.local',
+    password: '',
+  });
+  const [todos, setTodos] = useState(initialTodos);
+  const [draft, setDraft] = useState('');
+  const [query, setQuery] = useState('');
+  const [banner, setBanner] = useState(
+    featureFlags.has('auth')
+      ? 'Authenticate to unlock the workspace controls.'
+      : 'Foundation ready. Start shaping your product flows.',
+  );
+
+  const visibleTodos = todos.filter((todo) =>
+    todo.label.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const completedTodos = todos.filter((todo) => todo.completed).length;
+
+  function handleSignIn(event) {
+    event.preventDefault();
+    setSession({
+      name: 'OmniForge Operator',
+      email: credentials.email || 'operator@omniforge.local',
+    });
+    setBanner('Authenticated. The workspace is ready for guided execution.');
+  }
+
+  function handleAddTodo(event) {
+    event.preventDefault();
+
+    const normalizedDraft = draft.trim();
+
+    if (!normalizedDraft) {
+      return;
+    }
+
+    setTodos((currentTodos) => [
+      {
+        id: Date.now(),
+        label: normalizedDraft,
+        completed: false,
+      },
+      ...currentTodos,
+    ]);
+    setDraft('');
+  }
+
+  function toggleTodo(todoId) {
+    setTodos((currentTodos) =>
+      currentTodos.map((todo) =>
+        todo.id === todoId ? { ...todo, completed: !todo.completed } : todo,
+      ),
+    );
+  }
+
+  return (
+    <div className="page-shell">
+      <main className="app-frame">
+        <section className="hero-panel">
+          <span className="eyebrow">${heroLabel}</span>
+          <h1>{projectName}</h1>
+          <p>
+            This fallback project was generated as a complete runnable slice for the
+            requested intent.${preferredUiStyle ? ` It applies the saved ${preferredUiStyle.replace(/_/g, ' ')} interface preference before rendering the feature-aware` : ' It includes a modern interface foundation and feature-aware'}
+            panels driven by the interpreted product requirements.
+          </p>
+          ${referenceSummary ? `<div className="banner banner--muted">{${referenceSummaryLiteral}}</div>` : ''}
+          <div className="feature-list">
+            {Array.from(featureFlags).map((feature) => (
+              <span className="feature-pill" key={feature}>
+                {feature.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+          <div className="banner">{banner}</div>
+        </section>
+
+        <section className="content-grid">
+          ${
+            includesAuth
+              ? `!session ? (
+            <section className="card">
+              <h2>Authentication</h2>
+              <p>Secure the operator entry point before exposing project controls.</p>
+              <form className="stack" onSubmit={handleSignIn}>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={credentials.email}
+                    onChange={(event) =>
+                      setCredentials((current) => ({ ...current, email: event.target.value }))
+                    }
+                    placeholder="builder@omniforge.local"
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={credentials.password}
+                    onChange={(event) =>
+                      setCredentials((current) => ({ ...current, password: event.target.value }))
+                    }
+                    placeholder="Use any local demo password"
+                  />
+                </label>
+                <button type="submit">Enter Workspace</button>
+              </form>
+            </section>
+          ) : (
+            <section className="card">
+              <h2>Operator Session</h2>
+              <p>{session.name} is connected as {session.email}.</p>
+              <button type="button" onClick={() => setSession(null)}>
+                Sign Out
+              </button>
+            </section>
+          )`
+              : `<section className="card">
+            <h2>Operator Session</h2>
+            <p>Guest workspace enabled for rapid exploration and feature review.</p>
+          </section>`
+          }
+
+          ${
+            includesDashboard
+              ? `<section className="card">
+            <h2>Dashboard</h2>
+            <div className="metric-grid">
+              {dashboardCards.map((card) => (
+                <article className="metric-card" key={card.label}>
+                  <span>{card.label}</span>
+                  <strong>{card.value}</strong>
+                </article>
+              ))}
+            </div>
+          </section>`
+              : `<section className="card">
+            <h2>Project Overview</h2>
+            <p>
+              The generated foundation is organized for iterative delivery, extensibility,
+              and future autonomous orchestration.
+            </p>
+          </section>`
+          }
+
+          ${
+            includesTodo
+              ? `<section className="card card--wide">
+            <div className="section-header">
+              <div>
+                <h2>Todo Workspace</h2>
+                <p>{completedTodos} of {todos.length} tasks completed.</p>
+              </div>
+              ${
+                includesSearch
+                  ? `<input
+                className="search-input"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search tasks"
+              />`
+                  : ''
+              }
+            </div>
+            <form className="todo-form" onSubmit={handleAddTodo}>
+              <input
+                type="text"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Add a task to the execution queue"
+              />
+              <button type="submit">Add Task</button>
+            </form>
+            <ul className="todo-list">
+              {visibleTodos.map((todo) => (
+                <li className={todo.completed ? 'todo-item todo-item--done' : 'todo-item'} key={todo.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={todo.completed}
+                      onChange={() => toggleTodo(todo.id)}
+                    />
+                    <span>{todo.label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>`
+              : `<section className="card card--wide">
+            <h2>Execution Plan</h2>
+            <ol className="plan-list">
+              ${intent.steps
+                .map((step) => `<li>${step}</li>`)
+                .join('\n              ')}
+            </ol>
+          </section>`
+          }
+
+          ${
+            includesNotifications
+              ? `<section className="card">
+            <h2>Notifications</h2>
+            <p>Alert routing is staged for milestone updates, release events, and workspace signals.</p>
+          </section>`
+              : ''
+          }
+        </section>
+      </main>
+    </div>
+  );
+}
+`;
+
+  const stylesSource = `:root {
+  color-scheme: dark;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, ${prefersFintech ? 'rgba(20, 184, 166, 0.18)' : prefersBold ? 'rgba(249, 115, 22, 0.22)' : 'rgba(14, 165, 233, 0.16)'}, transparent 28%),
+    linear-gradient(180deg, ${backgroundStart} 0%, ${backgroundMid} 48%, ${backgroundEnd} 100%);
+  color: #f8fbff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, ${prefersFintech ? 'rgba(20, 184, 166, 0.18)' : prefersBold ? 'rgba(249, 115, 22, 0.22)' : 'rgba(14, 165, 233, 0.16)'}, transparent 28%),
+    linear-gradient(180deg, ${backgroundStart} 0%, ${backgroundMid} 48%, ${backgroundEnd} 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 0.9rem 1.2rem;
+  background: linear-gradient(135deg, ${accentPrimary}, ${accentSecondary});
+  color: white;
+  cursor: pointer;
+}
+
+input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: rgba(9, 17, 30, 0.88);
+  color: #f8fbff;
+}
+
+.page-shell {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.app-frame {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.hero-panel,
+.card {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(7, 12, 24, 0.82);
+  box-shadow: 0 18px 42px rgba(2, 6, 23, 0.35);
+  backdrop-filter: blur(16px);
+}
+
+.hero-panel {
+  border-radius: 28px;
+  padding: 32px;
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: #7dd3fc;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero-panel h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  line-height: 0.96;
+}
+
+.hero-panel p {
+  max-width: 760px;
+  color: #b7c5df;
+}
+
+.feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.feature-pill,
+.banner {
+  border-radius: 999px;
+}
+
+.feature-pill {
+  padding: 0.45rem 0.8rem;
+  background: rgba(14, 165, 233, 0.12);
+  color: #7dd3fc;
+}
+
+.banner {
+  display: inline-flex;
+  padding: 0.8rem 1rem;
+  background: rgba(37, 99, 235, 0.18);
+  color: #dbeafe;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.card {
+  border-radius: 22px;
+  padding: 24px;
+}
+
+.card--wide {
+  grid-column: span 2;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+}
+
+.card p {
+  margin: 0;
+  color: #aab8d3;
+}
+
+.stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.stack label {
+  display: grid;
+  gap: 8px;
+  color: #dbeafe;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.metric-card {
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.metric-card span {
+  display: block;
+  color: #8aa0c2;
+  margin-bottom: 8px;
+}
+
+.metric-card strong {
+  font-size: 1.8rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.search-input {
+  max-width: 280px;
+}
+
+.todo-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.todo-list,
+.plan-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.todo-item {
+  margin-bottom: 10px;
+  color: #dbeafe;
+}
+
+.todo-item label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.todo-item--done span {
+  color: #7c8ba8;
+  text-decoration: line-through;
+}
+
+.plan-list li {
+  margin-bottom: 10px;
+  color: #dbeafe;
+}
+
+@media (max-width: 900px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card--wide {
+    grid-column: auto;
+  }
+
+  .metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .todo-form,
+  .section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    max-width: none;
+  }
+}
+`;
+
+  return [
+    {
+      path: 'package.json',
+      content: JSON.stringify(
+        {
+          name: projectName,
+          private: true,
+          version: '0.1.0',
+          type: 'module',
+          scripts: {
+            dev: 'vite',
+            build: 'vite build',
+            preview: 'vite preview',
+          },
+          dependencies: {
+            react: '^19.2.0',
+            'react-dom': '^19.2.0',
+          },
+          devDependencies: {
+            '@vitejs/plugin-react': '^5.1.0',
+            vite: '^7.1.12',
+          },
+        },
+        null,
+        2,
+      ),
+    },
+    {
+      path: 'index.html',
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${projectName}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`,
+    },
+    {
+      path: 'src/main.jsx',
+      content: `import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
+import './styles.css';
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+`,
+    },
+    {
+      path: 'src/App.jsx',
+      content: appSource,
+    },
+    {
+      path: 'src/styles.css',
+      content: stylesSource,
+    },
+    {
+      path: 'README.md',
+      content: `# ${projectName}
+
+Generated by OmniForge Step 2 fallback code generation.
+
+## Intent
+
+- Goal: ${intent.goal}
+- Project Type: ${intent.projectType}
+- Features: ${(intent.features ?? []).join(', ') || 'core application flows'}
+- Complexity: ${intent.complexity}
+- Priority: ${intent.priority}
+
+## Run
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+`,
+    },
+    {
+      path: 'vite.config.js',
+      content: `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+});
+`,
+    },
+  ];
+}
+
+function buildApiFallback(intent) {
+  const projectName = intent.projectName ?? 'omniforge-api';
+  const requiresAuth = (intent.features ?? []).includes('auth');
+
+  return [
+    {
+      path: 'package.json',
+      content: JSON.stringify(
+        {
+          name: projectName,
+          private: true,
+          version: '0.1.0',
+          type: 'module',
+          scripts: {
+            start: 'node server.js',
+          },
+        },
+        null,
+        2,
+      ),
+    },
+    {
+      path: 'server.js',
+      content: `import http from 'node:http';
+
+const port = Number(process.env.PORT || 3000);
+let tasks = [
+  { id: 1, title: 'Bootstrap API contract', completed: true },
+  { id: 2, title: 'Document generated endpoints', completed: false },
+];
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+  response.end(JSON.stringify(payload, null, 2));
+}
+
+function isAuthorized(request) {
+  ${requiresAuth ? "return request.headers['x-omniforge-token'] === 'local-dev-token';" : 'return true;'}
+}
+
+const server = http.createServer((request, response) => {
+  const url = new URL(request.url, \`http://\${request.headers.host || 'localhost'}\`);
+
+  if (request.method === 'GET' && url.pathname === '/health') {
+    sendJson(response, 200, { status: 'ok', service: ${JSON.stringify(projectName)} });
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/context') {
+    sendJson(response, 200, {
+      goal: ${JSON.stringify(intent.goal)},
+      projectType: ${JSON.stringify(intent.projectType)},
+      features: ${JSON.stringify(intent.features ?? [])},
+      steps: ${JSON.stringify(intent.steps ?? [])},
+    });
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/tasks') {
+    sendJson(response, 200, { tasks });
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/tasks') {
+    if (!isAuthorized(request)) {
+      sendJson(response, 401, { error: 'Unauthorized request.' });
+      return;
+    }
+
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('end', () => {
+      try {
+        const payload = body ? JSON.parse(body) : {};
+
+        if (typeof payload.title !== 'string' || payload.title.trim().length === 0) {
+          sendJson(response, 400, { error: 'Task title is required.' });
+          return;
+        }
+
+        const nextTask = {
+          id: Date.now(),
+          title: payload.title.trim(),
+          completed: false,
+        };
+
+        tasks = [nextTask, ...tasks];
+        sendJson(response, 201, { task: nextTask });
+      } catch {
+        sendJson(response, 400, { error: 'Invalid JSON payload.' });
+      }
+    });
+    return;
+  }
+
+  sendJson(response, 404, { error: 'Route not found.' });
+});
+
+server.listen(port, () => {
+  console.log(\`${projectName} listening on port \${port}\`);
+});
+`,
+    },
+    {
+      path: 'README.md',
+      content: `# ${projectName}
+
+Generated by OmniForge Step 2 fallback API scaffolding.
+
+## Run
+
+\`\`\`bash
+npm start
+\`\`\`
+
+## Endpoints
+
+- \`GET /health\`
+- \`GET /api/context\`
+- \`GET /api/tasks\`
+- \`POST /api/tasks\`${requiresAuth ? ' with header `x-omniforge-token: local-dev-token`' : ''}
+`,
+    },
+  ];
+}
+
+function buildWorkflowFallback(intent, folderName, title) {
+  const summaryLines = (intent.steps ?? [])
+    .map((step, index) => `${index + 1}. ${step}`)
+    .join('\n');
+
+  return [
+    {
+      path: `${folderName}/plan.md`,
+      content: `# ${title}
+
+## Goal
+
+${intent.goal}
+
+## Project Type
+
+${intent.projectType}
+
+## Features
+
+${(intent.features ?? []).join(', ') || 'core workflow artifacts'}
+
+## Execution Steps
+
+${summaryLines}
+
+## Assumptions
+
+${(intent.assumptions ?? []).map((assumption) => `- ${assumption}`).join('\n')}
+`,
+    },
+    {
+      path: `${folderName}/manifest.json`,
+      content: JSON.stringify(
+        {
+          goal: intent.goal,
+          projectType: intent.projectType,
+          features: intent.features ?? [],
+          complexity: intent.complexity,
+          priority: intent.priority,
+          steps: intent.steps ?? [],
+          assumptions: intent.assumptions ?? [],
+        },
+        null,
+        2,
+      ),
+    },
+  ];
+}
+
+function buildFallbackFiles(intent) {
+  switch (intent.goal) {
+    case 'create_api':
+      return buildApiFallback(intent);
+    case 'deploy':
+      return buildWorkflowFallback(intent, 'deployment', 'Deployment Workflow');
+    case 'domain_setup':
+      return buildWorkflowFallback(intent, 'domain', 'Domain Setup Workflow');
+    case 'modify_app':
+      return buildWorkflowFallback(intent, 'changes', 'Application Modification Plan');
+    case 'build_app':
+    default:
+      return buildWebAppFallback(intent);
+  }
+}
+
+function hasReactEntryFile(files = []) {
+  return files.some((file) => file.path === 'src/main.jsx' || file.path === 'src/App.jsx');
+}
+
+function getRequiredFallbackPaths(intent) {
+  switch (intent.goal) {
+    case 'create_api':
+      return new Set([
+        'package.json',
+        'README.md',
+        'server.js',
+      ]);
+    case 'build_app':
+    default:
+      return new Set([
+        'package.json',
+        'README.md',
+        'index.html',
+        'src/main.jsx',
+        'src/App.jsx',
+        'src/styles.css',
+        'vite.config.js',
+      ]);
+  }
+}
+
+function shouldMergeFallback(intent, files = []) {
+  const filePaths = new Set(files.map((file) => file.path));
+
+  for (const requiredPath of getRequiredFallbackPaths(intent)) {
+    if (!filePaths.has(requiredPath)) {
+      return true;
+    }
+  }
+
+  if (intent.goal !== 'create_api' && !hasReactEntryFile(files)) {
+    return true;
+  }
+
+  return false;
+}
+
+function mergeFallbackScaffold(intent, files = []) {
+  if (!shouldMergeFallback(intent, files)) {
+    return files;
+  }
+
+  const fallbackFiles = buildFallbackFiles(intent);
+  const mergedFiles = new Map(files.map((file) => [file.path, file]));
+
+  for (const fallbackFile of fallbackFiles) {
+    if (!mergedFiles.has(fallbackFile.path)) {
+      mergedFiles.set(fallbackFile.path, fallbackFile);
+    }
+  }
+
+  return [...mergedFiles.values()];
+}
+
+export class CodeGenerator {
+  async generateCodeFromIntent(intent) {
+    assertIntent(intent);
+
+    try {
+      const rawResponse = await callAI(buildCodeGenerationPrompt(intent));
+      const parsedFiles = extractJSONArray(rawResponse);
+      return validateFiles(mergeFallbackScaffold(intent, validateFiles(parsedFiles)));
+    } catch {
+      return validateFiles(buildFallbackFiles(intent));
+    }
+  }
+}
+
+const codeGenerator = new CodeGenerator();
+
+export async function generateCodeFromIntent(intent) {
+  return codeGenerator.generateCodeFromIntent(intent);
+}
+
+export async function generateCode(prompt) {
+  assertPrompt(prompt);
+
+  try {
+    const openai = getOpenAIClient();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4.1',
+      messages: [
+        {
+          role: 'user',
+          content: prompt.trim(),
+        },
+      ],
+    });
+
+    const content = response.choices?.[0]?.message?.content;
+
+    if (typeof content !== 'string' || content.length === 0) {
+      throw new Error('OpenAI did not return code content.');
+    }
+
+    return content;
+  } catch (error) {
+    if (String(error?.message ?? '').includes('OPENAI_API_KEY is required')) {
+      return callAI(prompt.trim());
+    }
+
+    throw error;
+  }
+}
+
+export default codeGenerator;
