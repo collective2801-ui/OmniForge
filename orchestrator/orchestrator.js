@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runAutonomousMode } from '../autonomy/autonomousEngine.js';
@@ -209,8 +210,29 @@ function determineProjectStatus(intent, executionResult) {
   return 'generated';
 }
 
-function shouldAutoDeploy(userInput, intent) {
-  if (intent.goal === 'deploy') {
+function requiresProductionDelivery(options = {}) {
+  const executionProfile =
+    typeof options?.executionProfile === 'string'
+      ? options.executionProfile.trim().toLowerCase()
+      : '';
+  const qualityTarget =
+    typeof options?.qualityTarget === 'string'
+      ? options.qualityTarget.trim().toLowerCase()
+      : '';
+
+  return (
+    options?.requireProductionReadiness === true ||
+    executionProfile === 'production_product' ||
+    qualityTarget === 'blink_new_parity'
+  );
+}
+
+function hasLiveDeploymentUrl(deployment = null) {
+  return typeof deployment?.url === 'string' && deployment.url.trim().length > 0;
+}
+
+function shouldAutoDeploy(userInput, intent, options = {}) {
+  if (intent.goal === 'deploy' || requiresProductionDelivery(options)) {
     return true;
   }
 
@@ -404,6 +426,9 @@ function summarizeInputAnalysisForClient(analysis) {
     summary: analysis.summary ?? '',
     confidence: analysis.confidence ?? null,
     structure: analysis.structure ?? {},
+    businessProfile: analysis.businessProfile ?? null,
+    opportunitySummary: analysis.opportunitySummary ?? '',
+    moneyDrivers: analysis.moneyDrivers ?? null,
   };
 }
 
@@ -418,6 +443,11 @@ function summarizeSelectedOptionForClient(selectedOption) {
     description: selectedOption.description ?? '',
     features: selectedOption.features ?? [],
     projectType: selectedOption.projectType ?? null,
+    usefulness: selectedOption.usefulness ?? '',
+    businessImpact: selectedOption.businessImpact ?? '',
+    featureList: selectedOption.featureList ?? [],
+    moneyType: selectedOption.moneyType ?? null,
+    cashFlowProjection: selectedOption.cashFlowProjection ?? null,
   };
 }
 
@@ -450,6 +480,12 @@ function applyAnalyzedSelectionToIntent(intent, analysis, selectedOption) {
       selectedOption?.name
         ? `Bias the build toward the selected direction: ${selectedOption.name}.`
         : '',
+      selectedOption?.usefulness
+        ? `The finished product must clearly deliver this business value: ${selectedOption.usefulness}`
+        : '',
+      selectedOption?.businessImpact
+        ? `The build should optimize for this impact: ${selectedOption.businessImpact}`
+        : '',
     ]),
     analyzedInput: summarizeInputAnalysisForClient(analysis),
     selectedBuildOption: summarizeSelectedOptionForClient(selectedOption),
@@ -466,6 +502,22 @@ function createExecutionInput(taskInput, referenceContext, analysis, selectedOpt
     );
   }
 
+  if (analysis?.businessProfile?.categoryLabel) {
+    segments.push(`Business category: ${analysis.businessProfile.categoryLabel}.`);
+  }
+
+  if (analysis?.businessProfile?.audience) {
+    segments.push(`Primary users: ${analysis.businessProfile.audience}.`);
+  }
+
+  if (Array.isArray(analysis?.businessProfile?.pains) && analysis.businessProfile.pains.length > 0) {
+    segments.push(`Core pain points: ${analysis.businessProfile.pains.join(' ')}`);
+  }
+
+  if (analysis?.opportunitySummary) {
+    segments.push(`Opportunity summary: ${analysis.opportunitySummary}`);
+  }
+
   if (Array.isArray(analysis?.features) && analysis.features.length > 0) {
     segments.push(`Detected features: ${analysis.features.join(', ')}.`);
   }
@@ -480,6 +532,24 @@ function createExecutionInput(taskInput, referenceContext, analysis, selectedOpt
 
   if (selectedOption?.description) {
     segments.push(`Selected option detail: ${selectedOption.description}`);
+  }
+
+  if (selectedOption?.usefulness) {
+    segments.push(`Why this product is useful: ${selectedOption.usefulness}`);
+  }
+
+  if (selectedOption?.businessImpact) {
+    segments.push(`Business impact target: ${selectedOption.businessImpact}`);
+  }
+
+  if (selectedOption?.cashFlowProjection?.monthlyLabel) {
+    segments.push(
+      `Cash-flow projection to honor: ${selectedOption.cashFlowProjection.monthlyLabel} potential monthly impact and ${selectedOption.cashFlowProjection.annualLabel} annualized, based on ${selectedOption.cashFlowProjection.basis}.`,
+    );
+  }
+
+  if (Array.isArray(selectedOption?.featureList) && selectedOption.featureList.length > 0) {
+    segments.push(`Promised workflows that must be implemented completely: ${selectedOption.featureList.join(', ')}.`);
   }
 
   if (referenceContext?.promptAddendum) {
@@ -701,6 +771,7 @@ export class Orchestrator {
       options?.selectedOption && typeof options.selectedOption === 'object'
         ? options.selectedOption
         : null;
+    const requireAccessibleProduct = requiresProductionDelivery(options);
     const sessionId = createRunId();
     const sessionCreatedAt = new Date().toISOString();
     const onProgress = options?.onProgress;
@@ -1243,6 +1314,7 @@ export class Orchestrator {
           intent: {
             ...workingIntent,
             routeCategory: route.category,
+            summary: taskInput,
           },
           route,
           memoryContext: {
@@ -1420,6 +1492,12 @@ export class Orchestrator {
             routeCategory: route.category,
           },
           decisions: intelligenceDecisions,
+          integrationConfig:
+            integrations?.runtimeEnvConfig ??
+            integrations?.apiConfig ??
+            executionResult.artifacts?.prepare_api_integrations?.runtimeEnvConfig ??
+            executionResult.artifacts?.prepare_api_integrations?.apiConfig ??
+            null,
           onProgress,
         });
 
@@ -1479,7 +1557,7 @@ export class Orchestrator {
         }
       }
 
-      if (shouldAutoDeploy(taskInput, workingIntent)) {
+      if (shouldAutoDeploy(taskInput, workingIntent, options)) {
         deployment = await deploymentService.deployProject(
           {
             projectId: projectRecord.projectId,
@@ -1494,7 +1572,9 @@ export class Orchestrator {
             route,
             execution: executionResult,
             integrationConfig:
-              executionResult.artifacts?.prepare_api_integrations?.apiConfig ?? null,
+              executionResult.artifacts?.prepare_api_integrations?.runtimeEnvConfig ??
+              executionResult.artifacts?.prepare_api_integrations?.apiConfig ??
+              null,
           },
           {
             onProgress,
@@ -1522,6 +1602,14 @@ export class Orchestrator {
           status: deployment.status,
           url: deployment.url ?? null,
         });
+      }
+
+      if (requireAccessibleProduct && !hasLiveDeploymentUrl(deployment)) {
+        throw new Error(
+          deployment?.status === 'failed'
+            ? 'Production product build failed during deployment and did not produce a live access URL.'
+            : 'Production product build did not produce a live access URL.',
+        );
       }
 
       if (
@@ -1606,7 +1694,9 @@ export class Orchestrator {
               domain,
               dns,
               integrationConfig:
+                integrations?.runtimeEnvConfig ??
                 integrations?.apiConfig ??
+                executionResult.artifacts?.prepare_api_integrations?.runtimeEnvConfig ??
                 executionResult.artifacts?.prepare_api_integrations?.apiConfig ??
                 null,
             },

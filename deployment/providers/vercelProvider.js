@@ -64,12 +64,22 @@ function compactObject(value) {
   );
 }
 
-async function vercelRequest(endpoint, { method = 'GET', body } = {}) {
+function uniqueStrings(values = []) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0))];
+}
+
+async function vercelRequest(endpoint, { method = 'GET', body, query = {} } = {}) {
   const { token, teamId } = getVercelConfig();
   const url = new URL(`${VERCEL_API_URL}${endpoint}`);
 
   if (teamId) {
     url.searchParams.set('teamId', teamId);
+  }
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== null && value !== undefined && String(value).length > 0) {
+      url.searchParams.set(key, String(value));
+    }
   }
 
   const response = await fetch(url, {
@@ -157,13 +167,9 @@ async function resolveProjectSettings(projectPath) {
     });
   }
 
-  return compactObject({
+  return {
     framework: null,
-    installCommand: 'npm install',
-    buildCommand: null,
-    outputDirectory: null,
-    devCommand: typeof scripts?.start === 'string' ? scripts.start : 'npm start',
-  });
+  };
 }
 
 async function waitForDeploymentReady(deploymentId) {
@@ -191,6 +197,31 @@ async function waitForDeploymentReady(deploymentId) {
   throw new Error('Timed out while waiting for Vercel deployment to complete.');
 }
 
+async function resolveProductionProjectUrl(repoName) {
+  const projectDomains = await vercelRequest(`/v10/projects/${encodeURIComponent(repoName)}/domains`, {
+    query: {
+      production: 'true',
+    },
+  });
+  const verifiedDomain = (projectDomains.domains ?? []).find((domain) => domain?.verified === true);
+
+  if (verifiedDomain?.name) {
+    return normalizeUrl(verifiedDomain.name);
+  }
+
+  const project = await vercelRequest(`/v9/projects/${encodeURIComponent(repoName)}`);
+  const productionAliases = uniqueStrings([
+    ...(project?.targets?.production?.alias ?? []),
+    ...(project?.latestDeployments?.[0]?.alias ?? []),
+  ]);
+
+  if (productionAliases.length > 0) {
+    return normalizeUrl(productionAliases[0]);
+  }
+
+  return null;
+}
+
 export async function deployToVercel(repoName, options = {}) {
   assertRepoName(repoName);
 
@@ -204,22 +235,35 @@ export async function deployToVercel(repoName, options = {}) {
   }
 
   const projectSettings = await resolveProjectSettings(projectPath);
+  const environmentVariables = Object.fromEntries(
+    Object.entries(options.environmentVariables ?? {}).filter(
+      ([, value]) => typeof value === 'string' && value.trim().length > 0,
+    ),
+  );
   const deployment = await vercelRequest('/v13/deployments', {
     method: 'POST',
+    query: {
+      skipAutoDetectionConfirmation: 1,
+    },
     body: {
       name: repoName.trim().toLowerCase(),
       target: 'production',
       files,
       projectSettings,
+      env: Object.keys(environmentVariables).length > 0 ? environmentVariables : undefined,
     },
   });
   const readyDeployment = await waitForDeploymentReady(deployment.id);
+  const publicUrl =
+    await resolveProductionProjectUrl(repoName).catch(() => null);
+  const deploymentUrl = normalizeUrl(readyDeployment.url ?? deployment.url);
 
   return {
     provider: 'vercel',
     status: 'deployed',
     deploymentId: readyDeployment.id ?? deployment.id,
-    url: normalizeUrl(readyDeployment.url ?? deployment.url),
+    url: publicUrl ?? deploymentUrl,
+    deploymentUrl,
     inspectorUrl: normalizeUrl(readyDeployment.inspectorUrl ?? null),
     readyState: readyDeployment.readyState ?? deployment.readyState ?? 'READY',
   };
