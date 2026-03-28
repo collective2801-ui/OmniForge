@@ -952,13 +952,70 @@ export default defineConfig({
   ];
 }
 
+function createIntentSignalSet(intent = {}) {
+  const source = [
+    intent.goal,
+    intent.summary,
+    intent.userInput,
+    intent.projectName,
+    ...(intent.features ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  const signalSet = new Set((intent.features ?? []).map((feature) => String(feature).toLowerCase()));
+
+  if (signalSet.has('user_auth') || /\b(auth|authentication|login|sign[\s-]?in|account)\b/.test(source)) {
+    signalSet.add('auth');
+  }
+
+  if (signalSet.has('client_management') || /\b(client|customer|patient|member|lead|contact|crm|portal)\b/.test(source)) {
+    signalSet.add('client_management');
+  }
+
+  if (signalSet.has('wheel_spin') || /\b(wheel|spin|reward|prize)\b/.test(source)) {
+    signalSet.add('wheel_spin');
+  }
+
+  if (/\b(scan|scanner|barcode|camera|qr)\b/.test(source)) {
+    signalSet.add('scanner');
+  }
+
+  if (/\b(billing|payment|checkout|subscription|plan|upgrade|revenue)\b/.test(source)) {
+    signalSet.add('payments');
+  }
+
+  if (/\b(notification|alert|message|reminder)\b/.test(source)) {
+    signalSet.add('notifications');
+  }
+
+  if (/\b(upload|attachment|document|image|asset|brief)\b/.test(source)) {
+    signalSet.add('file_uploads');
+  }
+
+  if (/\b(search|filter|query|find)\b/.test(source)) {
+    signalSet.add('search');
+  }
+
+  if (/\b(admin|operator|staff|approval|queue|workflow)\b/.test(source)) {
+    signalSet.add('admin_controls');
+    signalSet.add('dashboard');
+  }
+
+  if (/\b(analytics|insight|forecast|profit|margin)\b/.test(source)) {
+    signalSet.add('analytics');
+  }
+
+  return signalSet;
+}
+
 function buildWebAppFallback(intent) {
   if (isTreatmentRewardsIntent(intent)) {
     return buildTreatmentRewardsFallback(intent);
   }
 
   const projectName = intent.projectName ?? 'omniforge-app';
-  const featureFlags = intent.features ?? [];
   const preferredUiStyle = intent.preferences?.preferredUiStyle ?? '';
   const referenceBranding = intent.referenceContext?.branding ?? {};
   const referenceSummary = intent.referenceContext?.summary ?? '';
@@ -967,99 +1024,349 @@ function buildWebAppFallback(intent) {
     referenceBranding.dominantColors.length > 0
       ? referenceBranding.dominantColors[0]
       : '';
-  const includesAuth = featureFlags.includes('auth');
-  const includesTodo = featureFlags.includes('todo_management');
-  const includesDashboard =
-    featureFlags.includes('dashboard') || featureFlags.includes('admin_controls');
-  const includesNotifications = featureFlags.includes('notifications');
-  const includesSearch = featureFlags.includes('search');
-  const prefersFintech = preferredUiStyle === 'fintech';
+  const signalSet = createIntentSignalSet(intent);
+  const featureFlags = [...signalSet];
+  const includesAuth = signalSet.has('auth');
+  const includesDashboard = signalSet.has('dashboard') || signalSet.has('admin_controls');
+  const includesNotifications = signalSet.has('notifications');
+  const includesSearch = signalSet.has('search');
+  const includesPayments = signalSet.has('payments');
+  const includesUploads = signalSet.has('file_uploads');
+  const includesScanner = signalSet.has('scanner');
+  const includesClientManagement = signalSet.has('client_management');
+  const includesAnalytics = signalSet.has('analytics');
+  const prefersFintech = preferredUiStyle === 'fintech' || includesPayments;
   const prefersBold = preferredUiStyle === 'bold';
   const heroLabel = preferredUiStyle
-    ? `OmniForge ${preferredUiStyle.replace(/_/g, ' ')} memory build`
-    : 'OmniForge Generated Project';
+    ? `OmniForge ${preferredUiStyle.replace(/_/g, ' ')} product build`
+    : 'OmniForge Finished Product';
   const backgroundStart = prefersFintech ? '#041512' : prefersBold ? '#180802' : '#07111f';
   const backgroundMid = prefersFintech ? '#06211d' : prefersBold ? '#26110a' : '#08101b';
   const backgroundEnd = prefersFintech ? '#020907' : prefersBold ? '#0f0502' : '#05070b';
   const accentPrimary = dominantReferenceColor || (prefersFintech ? '#14b8a6' : prefersBold ? '#f97316' : '#0ea5e9');
   const accentSecondary = prefersFintech ? '#22c55e' : prefersBold ? '#dc2626' : '#2563eb';
+  const productMode = includesScanner
+    ? 'scanner'
+    : includesPayments
+      ? 'revenue'
+      : includesClientManagement
+        ? 'portal'
+        : 'operations';
+  const heroTitle = includesScanner
+    ? 'Scan, qualify, and act in one flow'
+    : includesPayments
+      ? 'Convert revenue from one operating hub'
+      : includesClientManagement
+        ? 'Give every customer a self-serve product'
+        : 'Run the business from a real operating system';
+  const heroDescription = includesScanner
+    ? 'Operators can capture live inputs, review results, and route decisions without leaving the product.'
+    : includesPayments
+      ? 'This finished app ties together pipeline, billing, and customer follow-up so the product can convert, monetize, and retain users.'
+      : includesClientManagement
+        ? 'This build gives customers and staff a structured portal with status tracking, actions, and account visibility.'
+        : 'This finished app centralizes workflow, team actions, and operating visibility into a single usable product surface.';
+  const seedRecords = includesScanner
+    ? [
+        { id: 1, title: 'Organic Snack Box', owner: 'Jordan', value: 87, status: 'qualified', priority: 'high', note: 'Health score calculated and healthier swap suggested.' },
+        { id: 2, title: 'Energy Drink', owner: 'Taylor', value: 42, status: 'review', priority: 'medium', note: 'Review ingredient warning and offer premium alternative.' },
+        { id: 3, title: 'Breakfast Cereal', owner: 'Alex', value: 76, status: 'ready', priority: 'low', note: 'Ready to save into the recent scan history.' },
+      ]
+    : includesPayments
+      ? [
+          { id: 1, title: 'Inbound demo request', owner: 'Avery', value: 2400, status: 'proposal', priority: 'high', note: 'Follow up with automated pricing summary.' },
+          { id: 2, title: 'Reactivation campaign', owner: 'Morgan', value: 1800, status: 'qualified', priority: 'medium', note: 'Target churned accounts with premium offer.' },
+          { id: 3, title: 'Enterprise upgrade', owner: 'Skyler', value: 5600, status: 'ready', priority: 'high', note: 'Send contract and activate white-glove onboarding.' },
+        ]
+      : includesClientManagement
+        ? [
+            { id: 1, title: 'Client onboarding', owner: 'Jordan', value: 1, status: 'active', priority: 'high', note: 'Complete intake, upload forms, and assign next action.' },
+            { id: 2, title: 'Renewal reminder', owner: 'Taylor', value: 1, status: 'review', priority: 'medium', note: 'Prompt user to confirm plan and upload missing document.' },
+            { id: 3, title: 'Portal request', owner: 'Alex', value: 1, status: 'ready', priority: 'low', note: 'Activate self-serve portal and send access email.' },
+          ]
+        : [
+            { id: 1, title: 'Operations queue', owner: 'Jordan', value: 12, status: 'active', priority: 'high', note: 'Review the next operational blocker and assign owner.' },
+            { id: 2, title: 'Workflow handoff', owner: 'Taylor', value: 8, status: 'review', priority: 'medium', note: 'Confirm status and update the team timeline.' },
+            { id: 3, title: 'Exception queue', owner: 'Alex', value: 4, status: 'ready', priority: 'low', note: 'Resolve the last issue and close the loop.' },
+          ];
+  const seedMetrics = includesScanner
+    ? [
+        { label: 'Scans today', value: '24' },
+        { label: 'Healthy swaps', value: '11' },
+        { label: 'Saved results', value: '8' },
+        { label: 'Operator SLAs', value: '97%' },
+      ]
+    : includesPayments
+      ? [
+          { label: 'MRR pipeline', value: '$12.4k' },
+          { label: 'Qualified deals', value: '18' },
+          { label: 'Close rate', value: '31%' },
+          { label: 'Automation lift', value: '+14%' },
+        ]
+      : includesClientManagement
+        ? [
+            { label: 'Active accounts', value: '46' },
+            { label: 'Requests closed', value: '91%' },
+            { label: 'Self-serve rate', value: '63%' },
+            { label: 'Support saved', value: '18h' },
+          ]
+        : [
+            { label: 'Workflows live', value: '12' },
+            { label: 'Tasks completed', value: '86%' },
+            { label: 'Blocked items', value: '3' },
+            { label: 'Time saved', value: '11h' },
+          ];
+  const seedActivity = includesScanner
+    ? [
+        'A live scan was categorized and routed for action.',
+        'A healthier swap recommendation was saved to the workspace.',
+        'The product surface refreshed the recent scan history.',
+      ]
+    : includesPayments
+      ? [
+          'A proposal moved into checkout-ready status.',
+          'An upgrade prompt converted a user into a paid plan.',
+          'The revenue forecast updated after the latest pipeline event.',
+        ]
+      : includesClientManagement
+        ? [
+            'A client completed a self-serve action without staff help.',
+            'A document upload moved an account into ready status.',
+            'An operator resolved a queue item and notified the user.',
+          ]
+        : [
+            'An operator approved the next queue item.',
+            'A workflow exception was resolved and cleared.',
+            'The team dashboard refreshed its daily activity snapshot.',
+          ];
+  const navigationTabs = ['Overview', 'Workspace', 'Records', 'Insights', includesPayments ? 'Billing' : 'Admin'];
 
-  const appSource = `import { useState } from 'react';
+  const appSource = `import { useEffect, useMemo, useState } from 'react';
 import './styles.css';
 
 const projectName = ${JSON.stringify(projectName)};
-const featureFlags = new Set(${buildFeatureFlagArray(featureFlags)});
-const initialTodos = [
-  { id: 1, label: 'Review the generated project structure', completed: true },
-  { id: 2, label: 'Verify authentication and task flows', completed: false },
-  { id: 3, label: 'Prepare the app for deployment', completed: false },
-];
+const productMode = ${JSON.stringify(productMode)};
+const includesAuth = ${includesAuth ? 'true' : 'false'};
+const includesPayments = ${includesPayments ? 'true' : 'false'};
+const includesNotifications = ${includesNotifications ? 'true' : 'false'};
+const includesUploads = ${includesUploads ? 'true' : 'false'};
+const includesScanner = ${includesScanner ? 'true' : 'false'};
+const includesClientManagement = ${includesClientManagement ? 'true' : 'false'};
+const includesAnalytics = ${includesAnalytics ? 'true' : 'false'};
+const featureFlags = ${buildFeatureFlagArray(featureFlags)};
+const storageKey = ${JSON.stringify(`${projectName}-omniforge-product-state`)};
+const navigationTabs = ${JSON.stringify(navigationTabs)};
+const seedRecords = ${JSON.stringify(seedRecords, null, 2)};
+const seedMetrics = ${JSON.stringify(seedMetrics, null, 2)};
+const seedActivity = ${JSON.stringify(seedActivity, null, 2)};
+const heroTitle = ${JSON.stringify(heroTitle)};
+const heroDescription = ${JSON.stringify(heroDescription)};
+const referenceSummary = ${referenceSummaryLiteral};
 
-const dashboardCards = [
-  { label: 'Active Workflows', value: '04' },
-  { label: 'Automation Readiness', value: '92%' },
-  { label: 'Pending Reviews', value: '03' },
-];
+function loadState() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function nextStatus(currentStatus) {
+  const sequence = includesScanner
+    ? ['review', 'qualified', 'ready', 'saved']
+    : includesPayments
+      ? ['qualified', 'proposal', 'ready', 'live']
+      : ['review', 'active', 'ready', 'live'];
+  const currentIndex = sequence.indexOf(currentStatus);
+  return sequence[(currentIndex + 1) % sequence.length];
+}
 
 export default function App() {
+  const storedState = loadState();
   const [session, setSession] = useState(
-    featureFlags.has('auth')
-      ? null
-      : { name: 'OmniForge Builder', email: 'builder@omniforge.local' },
+    storedState?.session ?? (includesAuth ? null : { name: 'OmniForge Operator', role: 'operator', email: 'operator@omniforge.local' }),
   );
   const [credentials, setCredentials] = useState({
     email: 'builder@omniforge.local',
     password: '',
   });
-  const [todos, setTodos] = useState(initialTodos);
-  const [draft, setDraft] = useState('');
+  const [activeTab, setActiveTab] = useState(storedState?.activeTab ?? 'Overview');
+  const [records, setRecords] = useState(storedState?.records ?? seedRecords);
+  const [activity, setActivity] = useState(storedState?.activity ?? seedActivity);
+  const [premium, setPremium] = useState(storedState?.premium ?? false);
+  const [workspaceMessage, setWorkspaceMessage] = useState(storedState?.workspaceMessage ?? 'Product ready. Use the actions below to drive real workflow changes.');
+  const [draft, setDraft] = useState({ title: '', owner: '', value: '' });
   const [query, setQuery] = useState('');
   const [banner, setBanner] = useState(
-    featureFlags.has('auth')
-      ? 'Authenticate to unlock the workspace controls.'
-      : 'Foundation ready. Start shaping your product flows.',
+    includesAuth
+      ? 'Authenticate to unlock the live workspace.'
+      : 'Finished product ready. Start using the workflow controls.',
   );
+  const [lastAction, setLastAction] = useState(storedState?.lastAction ?? null);
 
-  const visibleTodos = todos.filter((todo) =>
-    todo.label.toLowerCase().includes(query.trim().toLowerCase()),
+  const visibleRecords = records.filter((record) =>
+    [record.title, record.owner, record.note, record.status]
+      .join(' ')
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   );
-  const completedTodos = todos.filter((todo) => todo.completed).length;
+  const completedCount = records.filter((record) => record.status === 'live' || record.status === 'saved').length;
+  const topRecord = visibleRecords[0] ?? null;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        session,
+        activeTab,
+        records,
+        activity,
+        premium,
+        workspaceMessage,
+        lastAction,
+      }),
+    );
+  }, [session, activeTab, records, activity, premium, workspaceMessage, lastAction]);
+
+  const insightCards = useMemo(() => {
+    if (includesPayments) {
+      return [
+        { label: 'Projected lift', value: '+$3.2k/mo' },
+        { label: 'Best channel', value: 'Automated follow-up' },
+        { label: 'Next action', value: 'Push proposal into checkout' },
+      ];
+    }
+
+    if (includesScanner) {
+      return [
+        { label: 'Average score', value: '68 / 100' },
+        { label: 'Fastest action', value: 'Save result' },
+        { label: 'Retention hook', value: 'Favorites + history' },
+      ];
+    }
+
+    return [
+      { label: 'Savings target', value: '11h / week' },
+      { label: 'Top friction', value: 'Manual follow-up' },
+      { label: 'Best automation', value: 'Queue + reminders' },
+    ];
+  }, []);
+
+  function appendActivity(message) {
+    setActivity((current) => [message, ...current].slice(0, 6));
+  }
 
   function handleSignIn(event) {
     event.preventDefault();
     setSession({
       name: 'OmniForge Operator',
       email: credentials.email || 'operator@omniforge.local',
+      role: 'operator',
     });
-    setBanner('Authenticated. The workspace is ready for guided execution.');
+    setBanner('Authenticated. The product workspace is now live and interactive.');
+    appendActivity('A secure operator session was started.');
   }
 
-  function handleAddTodo(event) {
+  function handleAddRecord(event) {
     event.preventDefault();
 
-    const normalizedDraft = draft.trim();
+    const normalizedTitle = draft.title.trim();
+    const normalizedOwner = draft.owner.trim() || 'Unassigned';
 
-    if (!normalizedDraft) {
+    if (!normalizedTitle) {
       return;
     }
 
-    setTodos((currentTodos) => [
+    setRecords((currentRecords) => [
       {
         id: Date.now(),
-        label: normalizedDraft,
-        completed: false,
+        title: normalizedTitle,
+        owner: normalizedOwner,
+        value: Number(draft.value) || (includesPayments ? 2400 : includesScanner ? 82 : 1),
+        status: includesPayments ? 'qualified' : includesScanner ? 'review' : 'active',
+        priority: 'medium',
+        note: includesScanner
+          ? 'Fresh result added to the recent scan queue.'
+          : includesPayments
+            ? 'New revenue opportunity added to the active pipeline.'
+            : 'New workflow item added to the operating queue.',
       },
-      ...currentTodos,
+      ...currentRecords,
     ]);
-    setDraft('');
+    setDraft({ title: '', owner: '', value: '' });
+    appendActivity(normalizedTitle + ' was added to the live product workspace.');
   }
 
-  function toggleTodo(todoId) {
-    setTodos((currentTodos) =>
-      currentTodos.map((todo) =>
-        todo.id === todoId ? { ...todo, completed: !todo.completed } : todo,
+  function advanceRecord(recordId) {
+    setRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.id === recordId ? { ...record, status: nextStatus(record.status) } : record,
       ),
     );
+    appendActivity('A record advanced to the next production stage.');
+  }
+
+  function togglePriority(recordId) {
+    setRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.id === recordId
+          ? { ...record, priority: record.priority === 'high' ? 'medium' : 'high' }
+          : record,
+      ),
+    );
+    appendActivity('Priority was updated for an active record.');
+  }
+
+  function handlePrimaryAction() {
+    if (includesScanner) {
+      const simulatedScan = {
+        title: 'Organic snack bar',
+        owner: 'Scanner',
+        value: 87,
+        status: 'saved',
+        priority: 'high',
+        note: 'Scanned live. Health score 87 with a healthier swap recommendation.',
+      };
+      setRecords((currentRecords) => [{ id: Date.now(), ...simulatedScan }, ...currentRecords].slice(0, 8));
+      setLastAction('Latest scan: Organic snack bar scored 87 and saved into the workspace.');
+      setWorkspaceMessage('Scanner flow completed. The result is now saved in the product history.');
+      appendActivity('A live scan was captured and saved.');
+      return;
+    }
+
+    if (includesPayments) {
+      setPremium(true);
+      setLastAction('Billing flow advanced. Premium conversion path is active.');
+      setWorkspaceMessage('Checkout and conversion flows are active inside the live product.');
+      appendActivity('A revenue workflow moved into premium conversion.');
+      return;
+    }
+
+    setLastAction('Workflow queue progressed to the next action.');
+    setWorkspaceMessage('Operations flow updated. The product workspace is keeping the team aligned.');
+    appendActivity('The main workflow advanced to its next milestone.');
+  }
+
+  function handleSecondaryAction() {
+    setActiveTab('Insights');
+    appendActivity('Insights view opened for review.');
   }
 
   return (
@@ -1069,38 +1376,54 @@ export default function App() {
           <span className="eyebrow">${heroLabel}</span>
           <h1>{projectName}</h1>
           <p>
-            This fallback project was generated as a complete runnable slice for the
-            requested intent.${preferredUiStyle ? ` It applies the saved ${preferredUiStyle.replace(/_/g, ' ')} interface preference before rendering the feature-aware` : ' It includes a modern interface foundation and feature-aware'}
-            panels driven by the interpreted product requirements.
+            {heroDescription}
           </p>
           ${referenceSummary ? `<div className="banner banner--muted">{${referenceSummaryLiteral}}</div>` : ''}
           <div className="feature-list">
-            {Array.from(featureFlags).map((feature) => (
+            {featureFlags.map((feature) => (
               <span className="feature-pill" key={feature}>
                 {feature.replace(/_/g, ' ')}
               </span>
             ))}
           </div>
+          <div className="hero-actions">
+            <button type="button" onClick={handlePrimaryAction}>
+              {includesScanner ? 'Open scanner' : includesPayments ? 'Open conversion flow' : 'Advance workflow'}
+            </button>
+            <button className="ghost-button" type="button" onClick={handleSecondaryAction}>
+              Review insights
+            </button>
+          </div>
           <div className="banner">{banner}</div>
         </section>
 
         <section className="content-grid">
-          ${
-            includesAuth
-              ? `!session ? (
-            <section className="card">
-              <h2>Authentication</h2>
-              <p>Secure the operator entry point before exposing project controls.</p>
+          <section className="card card--sidebar">
+            <h2>Product navigation</h2>
+            <div className="nav-stack">
+              {navigationTabs.map((tab) => (
+                <button
+                  className={activeTab === tab ? 'nav-button nav-button--active' : 'nav-button'}
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  type="button"
+                >
+                  <span>{tab}</span>
+                  <strong>{tab === 'Overview' ? 'Home' : tab}</strong>
+                </button>
+              ))}
+            </div>
+            {includesAuth && !session ? (
               <form className="stack" onSubmit={handleSignIn}>
                 <label>
-                  Email
+                  Operator email
                   <input
                     type="email"
                     value={credentials.email}
                     onChange={(event) =>
                       setCredentials((current) => ({ ...current, email: event.target.value }))
                     }
-                    placeholder="builder@omniforge.local"
+                    placeholder="operator@company.com"
                   />
                 </label>
                 <label>
@@ -1114,108 +1437,224 @@ export default function App() {
                     placeholder="Use any local demo password"
                   />
                 </label>
-                <button type="submit">Enter Workspace</button>
+                <button type="submit">Enter workspace</button>
               </form>
-            </section>
-          ) : (
-            <section className="card">
-              <h2>Operator Session</h2>
-              <p>{session.name} is connected as {session.email}.</p>
-              <button type="button" onClick={() => setSession(null)}>
-                Sign Out
-              </button>
-            </section>
-          )`
-              : `<section className="card">
-            <h2>Operator Session</h2>
-            <p>Guest workspace enabled for rapid exploration and feature review.</p>
-          </section>`
-          }
+            ) : (
+              <div className="session-card">
+                <span>Active session</span>
+                <strong>{session?.name ?? 'Guest workspace'}</strong>
+                <p>{session?.email ?? 'Interactive demo access is available.'}</p>
+                {includesAuth ? (
+                  <button type="button" onClick={() => setSession(null)}>
+                    Sign out
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </section>
 
-          ${
-            includesDashboard
-              ? `<section className="card">
-            <h2>Dashboard</h2>
-            <div className="metric-grid">
-              {dashboardCards.map((card) => (
-                <article className="metric-card" key={card.label}>
-                  <span>{card.label}</span>
-                  <strong>{card.value}</strong>
-                </article>
-              ))}
-            </div>
-          </section>`
-              : `<section className="card">
-            <h2>Project Overview</h2>
-            <p>
-              The generated foundation is organized for iterative delivery, extensibility,
-              and future autonomous orchestration.
-            </p>
-          </section>`
-          }
-
-          ${
-            includesTodo
-              ? `<section className="card card--wide">
+          <section className="card card--main">
             <div className="section-header">
               <div>
-                <h2>Todo Workspace</h2>
-                <p>{completedTodos} of {todos.length} tasks completed.</p>
+                <h2>{activeTab}</h2>
+                <p>{workspaceMessage}</p>
               </div>
-              ${
-                includesSearch
-                  ? `<input
+              ${includesSearch ? `<input
                 className="search-input"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search tasks"
-              />`
-                  : ''
-              }
+                placeholder="Search live records"
+              />` : ''}
             </div>
-            <form className="todo-form" onSubmit={handleAddTodo}>
-              <input
-                type="text"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Add a task to the execution queue"
-              />
-              <button type="submit">Add Task</button>
-            </form>
-            <ul className="todo-list">
-              {visibleTodos.map((todo) => (
-                <li className={todo.completed ? 'todo-item todo-item--done' : 'todo-item'} key={todo.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={todo.completed}
-                      onChange={() => toggleTodo(todo.id)}
-                    />
-                    <span>{todo.label}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </section>`
-              : `<section className="card card--wide">
-            <h2>Execution Plan</h2>
-            <ol className="plan-list">
-              ${intent.steps
-                .map((step) => `<li>${step}</li>`)
-                .join('\n              ')}
-            </ol>
-          </section>`
-          }
 
-          ${
-            includesNotifications
-              ? `<section className="card">
-            <h2>Notifications</h2>
-            <p>Alert routing is staged for milestone updates, release events, and workspace signals.</p>
-          </section>`
-              : ''
-          }
+            {activeTab === 'Overview' ? (
+              <div className="overview-stack">
+                <div className="metric-grid">
+                  {seedMetrics.map((card) => (
+                    <article className="metric-card" key={card.label}>
+                      <span>{card.label}</span>
+                      <strong>{card.value}</strong>
+                    </article>
+                  ))}
+                </div>
+                <div className="showcase-grid">
+                  <article className="showcase-card">
+                    <span className="section-kicker">Primary workflow</span>
+                    <strong>{heroTitle}</strong>
+                    <p>{lastAction || heroDescription}</p>
+                    <div className="pill-row">
+                      {featureFlags.slice(0, 5).map((feature) => (
+                        <span className="feature-pill feature-pill--solid" key={feature}>{feature.replace(/_/g, ' ')}</span>
+                      ))}
+                    </div>
+                  </article>
+                  <article className="showcase-card">
+                    <span className="section-kicker">Delivery status</span>
+                    <strong>{completedCount} items advanced</strong>
+                    <p>The product is running with a usable workflow, live state changes, and persistent local product memory.</p>
+                    <div className="chart-list">
+                      {insightCards.map((card) => (
+                        <div className="chart-row" key={card.label}>
+                          <span>{card.label}</span>
+                          <strong>{card.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'Workspace' ? (
+              <div className="workspace-stack">
+                <article className="workspace-module">
+                  <div>
+                    <span className="section-kicker">Live action</span>
+                    <strong>{includesScanner ? 'Scanner simulation' : includesPayments ? 'Revenue flow' : 'Operations flow'}</strong>
+                    <p>{lastAction || 'Use the action button to progress the finished product workflow.'}</p>
+                  </div>
+                  <div className="workspace-module__actions">
+                    <button type="button" onClick={handlePrimaryAction}>
+                      {includesScanner ? 'Simulate scan' : includesPayments ? 'Convert pipeline' : 'Advance workflow'}
+                    </button>
+                    <button className="ghost-button" type="button" onClick={handleSecondaryAction}>
+                      Open insights
+                    </button>
+                  </div>
+                </article>
+                <article className="workspace-module workspace-module--soft">
+                  <span className="section-kicker">Recent product activity</span>
+                  <div className="activity-list">
+                    {activity.map((item, index) => (
+                      <article className="activity-card" key={item + index}>
+                        <strong>Update {index + 1}</strong>
+                        <p>{item}</p>
+                      </article>
+                    ))}
+                  </div>
+                </article>
+              </div>
+            ) : null}
+
+            {activeTab === 'Records' ? (
+              <div className="records-stack">
+                <form className="record-form" onSubmit={handleAddRecord}>
+                  <input
+                    type="text"
+                    value={draft.title}
+                    onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder=${JSON.stringify(includesScanner ? 'Add a product to review' : includesPayments ? 'Add a revenue opportunity' : 'Add a workflow record')}
+                  />
+                  <input
+                    type="text"
+                    value={draft.owner}
+                    onChange={(event) => setDraft((current) => ({ ...current, owner: event.target.value }))}
+                    placeholder="Owner"
+                  />
+                  <input
+                    type="number"
+                    value={draft.value}
+                    onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))}
+                    placeholder=${JSON.stringify(includesPayments ? 'Value' : 'Score')}
+                  />
+                  <button type="submit">Add record</button>
+                </form>
+                <div className="record-list">
+                  {visibleRecords.map((record) => (
+                    <article className="record-card" key={record.id}>
+                      <div className="record-card__top">
+                        <div>
+                          <strong>{record.title}</strong>
+                          <p>{record.note}</p>
+                        </div>
+                        <span className={'record-status record-status--' + record.status}>{record.status}</span>
+                      </div>
+                      <div className="record-card__meta">
+                        <span>Owner: {record.owner}</span>
+                        <span>{includesPayments ? formatMoney(record.value) : record.value}</span>
+                        <span>Priority: {record.priority}</span>
+                      </div>
+                      <div className="record-card__actions">
+                        <button type="button" onClick={() => advanceRecord(record.id)}>Advance</button>
+                        <button className="ghost-button" type="button" onClick={() => togglePriority(record.id)}>
+                          Toggle priority
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'Insights' ? (
+              <div className="insight-grid">
+                {insightCards.map((card) => (
+                  <article className="showcase-card" key={card.label}>
+                    <span className="section-kicker">{card.label}</span>
+                    <strong>{card.value}</strong>
+                    <p>{includesAnalytics ? 'AI-assisted reporting is active for this finished product surface.' : 'Operational insight generated from the live workflow state.'}</p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+
+            {activeTab === 'Billing' || activeTab === 'Admin' ? (
+              <div className="workspace-stack">
+                <article className="workspace-module">
+                  <span className="section-kicker">{includesPayments ? 'Billing' : 'Admin controls'}</span>
+                  <strong>{includesPayments ? (premium ? 'Premium plan active' : 'Starter plan live') : 'Operator controls ready'}</strong>
+                  <p>
+                    {includesPayments
+                      ? 'Pricing, upgrade, and monetization flows are included in this finished build.'
+                      : 'Operator actions, assignments, and queue management are ready to use.'}
+                  </p>
+                  <div className="workspace-module__actions">
+                    {includesPayments ? (
+                      <button type="button" onClick={() => { setPremium((current) => !current); appendActivity('Billing plan was updated from the live product.'); }}>
+                        {premium ? 'Manage plan' : 'Upgrade now'}
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => appendActivity('An admin action was completed in the workspace.')}>
+                        Approve next item
+                      </button>
+                    )}
+                    {includesNotifications ? (
+                      <button className="ghost-button" type="button" onClick={() => appendActivity('A customer notification was sent.')}>
+                        Send alert
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+                ${includesUploads ? `<article className="workspace-module workspace-module--soft">
+                  <span className="section-kicker">Assets</span>
+                  <strong>Upload pipeline ready</strong>
+                  <p>Generated products can capture documents, assets, or customer uploads inside the workspace.</p>
+                </article>` : ''}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="card card--rail">
+            <h2>Live assistant rail</h2>
+            <div className="rail-block">
+              <span className="section-kicker">Reference context</span>
+              <p>{referenceSummary || 'No source reference was attached to this build.'}</p>
+            </div>
+            <div className="rail-block">
+              <span className="section-kicker">Top record</span>
+              <strong>{topRecord ? topRecord.title : 'No active record'}</strong>
+              <p>{topRecord ? topRecord.note : 'Add a new record to populate the workspace.'}</p>
+            </div>
+            <div className="rail-block">
+              <span className="section-kicker">Execution status</span>
+              <div className="check-list">
+                <div><span className="check-dot"></span><strong>Interactive UI</strong></div>
+                <div><span className="check-dot"></span><strong>Stateful workflows</strong></div>
+                <div><span className="check-dot"></span><strong>Ready to extend</strong></div>
+              </div>
+            </div>
+          </section>
         </section>
       </main>
     </div>
@@ -1256,6 +1695,11 @@ button {
   background: linear-gradient(135deg, ${accentPrimary}, ${accentSecondary});
   color: white;
   cursor: pointer;
+}
+
+.ghost-button {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 input {
@@ -1339,7 +1783,7 @@ input {
 
 .content-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.6fr) minmax(260px, 0.82fr);
   gap: 20px;
 }
 
@@ -1348,8 +1792,10 @@ input {
   padding: 24px;
 }
 
-.card--wide {
-  grid-column: span 2;
+.card--sidebar,
+.card--rail {
+  display: grid;
+  gap: 18px;
 }
 
 .card h2 {
@@ -1373,17 +1819,169 @@ input {
   color: #dbeafe;
 }
 
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 16px;
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.metric-card {
-  border-radius: 16px;
-  padding: 18px;
-  background: rgba(15, 23, 42, 0.72);
+.section-kicker {
+  display: inline-flex;
+  color: #8fb5ff;
+  margin-bottom: 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nav-stack,
+.rail-block,
+.overview-stack,
+.workspace-stack,
+.records-stack,
+.record-list,
+.insight-grid,
+.chart-list,
+.check-list {
+  display: grid;
+  gap: 12px;
+}
+
+.nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: left;
+}
+
+.nav-button--active {
+  border-color: rgba(125, 211, 252, 0.34);
+  box-shadow: 0 12px 30px rgba(14, 165, 233, 0.14);
+}
+
+.session-card,
+.showcase-card,
+.workspace-module,
+.rail-block,
+.record-card,
+.metric-card,
+.activity-card {
+  border-radius: 18px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255,255,255,0.04);
+}
+
+.metric-grid,
+.showcase-grid,
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 1.5rem;
+}
+
+.showcase-card strong,
+.workspace-module strong,
+.record-card strong,
+.rail-block strong,
+.session-card strong {
+  display: block;
+  font-size: 1.08rem;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feature-pill--solid {
+  background: rgba(255,255,255,0.08);
+  color: #dbeafe;
+}
+
+.chart-row,
+.record-card__meta,
+.record-card__actions,
+.workspace-module__actions,
+.check-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(140px, 0.7fr) auto;
+  gap: 12px;
+}
+
+.record-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  border-radius: 999px;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.06);
+}
+
+.record-status--saved,
+.record-status--live {
+  background: rgba(34,197,94,0.18);
+  color: #86efac;
+}
+
+.record-status--proposal,
+.record-status--ready,
+.record-status--qualified {
+  background: rgba(59,130,246,0.18);
+  color: #93c5fd;
+}
+
+.workspace-module--soft {
+  background: rgba(255,255,255,0.02);
+}
+
+.activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.check-list div {
+  justify-content: flex-start;
+}
+
+.check-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, ${accentPrimary}, ${accentSecondary});
+}
+
+.metric-grid {
+  margin-top: 16px;
 }
 
 .metric-card span {
@@ -1408,56 +2006,25 @@ input {
   max-width: 280px;
 }
 
-.todo-form {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.todo-list,
-.plan-list {
-  margin: 0;
-  padding-left: 1.2rem;
-}
-
-.todo-item {
-  margin-bottom: 10px;
-  color: #dbeafe;
-}
-
-.todo-item label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.todo-item--done span {
-  color: #7c8ba8;
-  text-decoration: line-through;
-}
-
-.plan-list li {
-  margin-bottom: 10px;
-  color: #dbeafe;
-}
-
 @media (max-width: 900px) {
   .content-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .card--wide {
-    grid-column: auto;
-  }
-
   .metric-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .todo-form,
+  .record-form,
   .section-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .record-form,
+  .showcase-grid,
+  .insight-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .search-input {
