@@ -38,7 +38,7 @@ const HOST =
 const WEB_DIST_DIRECTORY = path.join(platformConfig.rootDirectory, 'apps', 'web', 'dist');
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME?.trim() || 'omniforge_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
-const DEFAULT_ALLOWED_ORIGINS = Object.freeze([
+const DEFAULT_DEVELOPMENT_ALLOWED_ORIGINS = Object.freeze([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3001',
@@ -108,7 +108,7 @@ function unique(values = []) {
 
 function getAllowedOrigins() {
   return unique([
-    ...DEFAULT_ALLOWED_ORIGINS,
+    ...(process.env.NODE_ENV === 'production' ? [] : DEFAULT_DEVELOPMENT_ALLOWED_ORIGINS),
     ...(process.env.ALLOWED_ORIGINS?.split(',').map((entry) => entry.trim()) ?? []),
     process.env.FRONTEND_URL?.trim() || process.env.PLATFORM_URL?.trim() || '',
   ]);
