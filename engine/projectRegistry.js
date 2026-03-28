@@ -41,6 +41,14 @@ function normalizeProjectRecord(project) {
     projectName: projectName.trim(),
     projectPath: path.resolve(projectPath),
     projectType: projectType.trim(),
+    userId:
+      typeof project.userId === 'string' && project.userId.trim().length > 0
+        ? project.userId.trim()
+        : null,
+    deploymentKey:
+      typeof project.deploymentKey === 'string' && project.deploymentKey.trim().length > 0
+        ? project.deploymentKey.trim()
+        : '',
     createdAt: project.createdAt ?? timestamp,
     updatedAt: timestamp,
     status: typeof project.status === 'string' && project.status.trim().length > 0

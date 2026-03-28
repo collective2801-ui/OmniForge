@@ -1478,6 +1478,7 @@ export class Orchestrator {
             projectName: (updatedProject ?? projectRecord).projectName,
             projectPath: projectRoot,
             projectType: workingIntent.projectType,
+            userId,
             intent: {
               ...workingIntent,
               routeCategory: route.category,
@@ -1497,12 +1498,14 @@ export class Orchestrator {
             status: 'deployed',
             liveUrl: deployment.url,
             deploymentProvider: deployment.provider,
+            deploymentKey: deployment.deploymentKey ?? null,
             repositoryUrl: deployment.repository?.htmlUrl ?? null,
           });
         } else if (deployment.status === 'failed') {
           updatedProject = await projectRegistry.updateProject(projectRecord.projectId, {
             status: 'deployment_failed',
             deploymentProvider: deployment.provider,
+            deploymentKey: deployment.deploymentKey ?? null,
           });
         }
 

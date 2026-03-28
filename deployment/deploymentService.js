@@ -49,6 +49,32 @@ function slugify(value) {
     .slice(0, 80);
 }
 
+function getIdentifierSegment(value, length = 8) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, length);
+}
+
+export function buildDeploymentKey(project, options = {}) {
+  const explicitRepoName =
+    typeof options.repoName === 'string' && options.repoName.trim().length > 0
+      ? options.repoName.trim()
+      : '';
+
+  if (explicitRepoName) {
+    return slugify(explicitRepoName);
+  }
+
+  const projectSlug = slugify(project.projectName);
+  const userSegment = getIdentifierSegment(project.userId, 8);
+  const projectSegment =
+    getIdentifierSegment(project.projectId, 8) ||
+    getIdentifierSegment(project.projectPath, 8);
+
+  return slugify([projectSlug, userSegment, projectSegment].filter(Boolean).join('-'));
+}
+
 function selectProvider(project, options = {}) {
   if (typeof options.provider === 'string' && options.provider in PROVIDER_REGISTRY) {
     return options.provider;
@@ -105,10 +131,11 @@ async function ensureDeploymentArtifacts(project) {
   return writtenFiles;
 }
 
-function normalizeDeploymentResult(provider, repository, providerResult) {
+function normalizeDeploymentResult(provider, deploymentKey, repository, providerResult) {
   return {
     status: providerResult.status ?? (provider === 'vercel' ? 'deployed' : 'prepared'),
     provider,
+    deploymentKey,
     url: providerResult.url ?? null,
     repository: repository ?? null,
     deploymentId: providerResult.deploymentId ?? null,
@@ -127,7 +154,8 @@ export class DeploymentService {
     assertProject(project);
 
     const provider = selectProvider(project, options);
-    const repoName = slugify(options.repoName ?? project.projectName);
+    const deploymentKey = buildDeploymentKey(project, options);
+    const repoName = deploymentKey;
 
     try {
       await logger.info('Deployment service started.', {
@@ -135,6 +163,7 @@ export class DeploymentService {
         projectName: project.projectName,
         provider,
         repoName,
+        deploymentKey,
       });
       await emitProgress(options.onProgress, 'deployment_started', {
         projectName: project.projectName,
@@ -234,6 +263,7 @@ export class DeploymentService {
       });
       const deploymentResult = normalizeDeploymentResult(
         provider,
+        deploymentKey,
         repository
           ? {
               repoName: repository.repoName,
@@ -262,6 +292,7 @@ export class DeploymentService {
       const failure = {
         status: 'failed',
         provider,
+        deploymentKey,
         url: null,
         error: error?.message ?? 'Unexpected deployment failure.',
       };

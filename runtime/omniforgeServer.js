@@ -605,6 +605,8 @@ function normalizeProjectSnapshot(project, registryProject = null) {
       '',
     repositoryUrl:
       registryProject?.repositoryUrl ?? project?.repositoryUrl ?? project?.repository_url ?? '',
+    deploymentKey:
+      registryProject?.deploymentKey ?? metadata?.deployment?.key ?? '',
     customDomain:
       registryProject?.customDomain ?? project?.customDomain ?? project?.custom_domain ?? '',
     domainProvider: registryProject?.domainProvider ?? '',
@@ -887,6 +889,14 @@ function buildProjectPersistenceMetadata(orchestrationResult, generatedFiles = [
       finalization: orchestrationResult.finalization ?? null,
       diagnostics: orchestrationResult.runtime ?? null,
     },
+    deployment: orchestrationResult.deployment
+      ? {
+          key: orchestrationResult.deployment.deploymentKey ?? '',
+          provider: orchestrationResult.deployment.provider ?? '',
+          url: orchestrationResult.deployment.url ?? '',
+          repositoryUrl: orchestrationResult.deployment.repository?.htmlUrl ?? '',
+        }
+      : null,
     files: createPersistedWorkspaceFiles(generatedFiles),
     savedAt: new Date().toISOString(),
   };
