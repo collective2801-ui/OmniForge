@@ -84,7 +84,879 @@ function buildFeatureFlagArray(features) {
   return JSON.stringify(features, null, 2);
 }
 
+function isTreatmentRewardsIntent(intent = {}) {
+  const source = [
+    intent.summary,
+    intent.userInput,
+    intent.projectName,
+    ...(intent.features ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return /(reward|prize|spin|wheel)/.test(source) && /(treatment|attendance|ua|screen|client|admin|administrator)/.test(source);
+}
+
+function buildTreatmentRewardsFallback(intent) {
+  const projectName = intent.projectName ?? 'treatment-rewards-app';
+
+  const appSource = `import { useEffect, useMemo, useState } from 'react';
+import './styles.css';
+
+const STORAGE_KEY = 'omniforge-treatment-rewards-state';
+const ADMIN_PASSCODE = 'recovery-admin';
+const PRIZES = [
+  { label: '$5 Gift Card', tone: 'mint' },
+  { label: 'Coffee Voucher', tone: 'sky' },
+  { label: 'Snack Pack', tone: 'violet' },
+  { label: 'Transit Pass', tone: 'rose' },
+  { label: 'Bonus Phone Minutes', tone: 'amber' },
+  { label: 'Wellness Journal', tone: 'teal' },
+];
+const DEFAULT_CLIENTS = [
+  {
+    id: 1,
+    name: 'Jordan M.',
+    attendanceDone: true,
+    uaComplete: true,
+    hasSpun: false,
+    lastPrize: null,
+    spinCount: 0,
+  },
+  {
+    id: 2,
+    name: 'Taylor R.',
+    attendanceDone: true,
+    uaComplete: false,
+    hasSpun: false,
+    lastPrize: null,
+    spinCount: 0,
+  },
+  {
+    id: 3,
+    name: 'Alex P.',
+    attendanceDone: false,
+    uaComplete: false,
+    hasSpun: false,
+    lastPrize: null,
+    spinCount: 0,
+  },
+];
+
+function randomIndex(length) {
+  if (globalThis.crypto?.getRandomValues) {
+    const buffer = new Uint32Array(1);
+    globalThis.crypto.getRandomValues(buffer);
+    return buffer[0] % length;
+  }
+
+  return Math.floor(Math.random() * length);
+}
+
+function createInitialState() {
+  return {
+    clients: DEFAULT_CLIENTS,
+    activeClientId: DEFAULT_CLIENTS[0].id,
+  };
+}
+
+function loadState() {
+  if (typeof window === 'undefined') {
+    return createInitialState();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return createInitialState();
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.clients) || parsed.clients.length === 0) {
+      return createInitialState();
+    }
+
+    return {
+      clients: parsed.clients,
+      activeClientId: parsed.activeClientId ?? parsed.clients[0].id,
+    };
+  } catch {
+    return createInitialState();
+  }
+}
+
+function saveState(value) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+}
+
+function isEligible(client) {
+  return Boolean(client && client.attendanceDone && client.uaComplete && !client.hasSpun);
+}
+
+export default function App() {
+  const [role, setRole] = useState('client');
+  const [state, setState] = useState(() => loadState());
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [adminCode, setAdminCode] = useState('');
+  const [newClientName, setNewClientName] = useState('');
+  const [flash, setFlash] = useState('Select a client and check eligibility to spin the wheel.');
+  const [spinning, setSpinning] = useState(false);
+  const [winningIndex, setWinningIndex] = useState(null);
+
+  useEffect(() => {
+    saveState(state);
+  }, [state]);
+
+  const activeClient = useMemo(
+    () => state.clients.find((client) => client.id === state.activeClientId) ?? null,
+    [state],
+  );
+  const eligible = isEligible(activeClient);
+
+  function updateClient(clientId, updater) {
+    setState((currentState) => ({
+      ...currentState,
+      clients: currentState.clients.map((client) => {
+        if (client.id !== clientId) {
+          return client;
+        }
+
+        return typeof updater === 'function' ? updater(client) : { ...client, ...updater };
+      }),
+    }));
+  }
+
+  function addClient(event) {
+    event.preventDefault();
+    const normalizedName = newClientName.trim();
+
+    if (!normalizedName) {
+      setFlash('Enter a client name before adding them to the program.');
+      return;
+    }
+
+    const nextClient = {
+      id: Date.now(),
+      name: normalizedName,
+      attendanceDone: false,
+      uaComplete: false,
+      hasSpun: false,
+      lastPrize: null,
+      spinCount: 0,
+    };
+
+    setState((currentState) => ({
+      ...currentState,
+      clients: [nextClient, ...currentState.clients],
+      activeClientId: nextClient.id,
+    }));
+    setNewClientName('');
+    setFlash(normalizedName + ' added to the rewards program.');
+  }
+
+  function removeClient(clientId) {
+    setState((currentState) => {
+      const nextClients = currentState.clients.filter((client) => client.id !== clientId);
+      return {
+        clients: nextClients,
+        activeClientId: nextClients[0]?.id ?? null,
+      };
+    });
+    setFlash('Client removed from the program list.');
+  }
+
+  function unlockAdmin(event) {
+    event.preventDefault();
+
+    if (adminCode.trim().toLowerCase() !== ADMIN_PASSCODE) {
+      setFlash('Use the admin code recovery-admin to unlock staff controls.');
+      return;
+    }
+
+    setAdminUnlocked(true);
+    setAdminCode('');
+    setFlash('Administrator tools unlocked.');
+  }
+
+  function handleSpin() {
+    if (!activeClient) {
+      setFlash('Select a client first.');
+      return;
+    }
+
+    if (!eligible) {
+      setFlash('This client must complete attendance and a consistent UA before spinning.');
+      return;
+    }
+
+    setSpinning(true);
+    setFlash('Spinning the wheel for ' + activeClient.name + '...');
+    const nextWinningIndex = randomIndex(PRIZES.length);
+
+    window.setTimeout(() => {
+      const prize = PRIZES[nextWinningIndex];
+      setWinningIndex(nextWinningIndex);
+      updateClient(activeClient.id, (client) => ({
+        ...client,
+        hasSpun: true,
+        lastPrize: prize.label,
+        spinCount: client.spinCount + 1,
+      }));
+      setSpinning(false);
+      setFlash(activeClient.name + ' won ' + prize.label + '.');
+    }, 900);
+  }
+
+  return (
+    <div className="reward-shell">
+      <section className="hero-card">
+        <div>
+          <span className="eyebrow">OmniForge Rewards SaaS</span>
+          <h1>${projectName}</h1>
+          <p>
+            A treatment-program rewards application with a fully random wheel, a client spin flow,
+            and administrator controls for attendance, UAs, and eligibility.
+          </p>
+        </div>
+        <div className="role-switcher">
+          <button
+            type="button"
+            className={role === 'client' ? 'tab-button tab-button--active' : 'tab-button'}
+            onClick={() => setRole('client')}
+          >
+            Client
+          </button>
+          <button
+            type="button"
+            className={role === 'admin' ? 'tab-button tab-button--active' : 'tab-button'}
+            onClick={() => setRole('admin')}
+          >
+            Administrator
+          </button>
+        </div>
+      </section>
+
+      <div className="app-grid">
+        <section className="workspace-card">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">Client experience</span>
+              <h2>Reward wheel</h2>
+            </div>
+            <select
+              className="client-select"
+              value={state.activeClientId ?? ''}
+              onChange={(event) =>
+                setState((currentState) => ({
+                  ...currentState,
+                  activeClientId: Number(event.target.value),
+                }))
+              }
+            >
+              {state.clients.map((client) => (
+                <option value={client.id} key={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="wheel-layout">
+            <div className={spinning ? 'wheel wheel--spinning' : 'wheel'}>
+              {PRIZES.map((prize, index) => (
+                <div
+                  className={winningIndex === index ? 'wheel-segment wheel-segment--active' : 'wheel-segment'}
+                  data-tone={prize.tone}
+                  key={prize.label}
+                >
+                  {prize.label}
+                </div>
+              ))}
+            </div>
+
+            <div className="spin-panel">
+              <div className="status-card">
+                <span>Selected client</span>
+                <strong>{activeClient?.name ?? 'No client selected'}</strong>
+              </div>
+              <div className="status-card">
+                <span>Eligibility</span>
+                <strong>{eligible ? 'Ready to spin' : 'Needs admin approval'}</strong>
+              </div>
+              <button type="button" className="spin-button" disabled={!eligible || spinning} onClick={handleSpin}>
+                {spinning ? 'Spinning...' : 'Spin wheel'}
+              </button>
+              <p className="helper-text">
+                {activeClient?.lastPrize
+                  ? activeClient.name + ' last won ' + activeClient.lastPrize + '.'
+                  : 'No prize has been awarded to this client yet.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="eligibility-grid">
+            <article className={activeClient?.attendanceDone ? 'check-card check-card--done' : 'check-card'}>
+              <span>Attendance</span>
+              <strong>{activeClient?.attendanceDone ? 'Complete' : 'Pending'}</strong>
+            </article>
+            <article className={activeClient?.uaComplete ? 'check-card check-card--done' : 'check-card'}>
+              <span>Consistent UA</span>
+              <strong>{activeClient?.uaComplete ? 'Complete' : 'Pending'}</strong>
+            </article>
+            <article className={activeClient?.hasSpun ? 'check-card' : 'check-card check-card--done'}>
+              <span>Spin available</span>
+              <strong>{activeClient?.hasSpun ? 'Already used' : 'Available'}</strong>
+            </article>
+          </div>
+        </section>
+
+        <aside className="workspace-card admin-column">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">Staff controls</span>
+              <h2>Administrator panel</h2>
+            </div>
+          </div>
+
+          {role === 'admin' && !adminUnlocked ? (
+            <form className="admin-unlock" onSubmit={unlockAdmin}>
+              <p>Enter the admin code to manage client eligibility.</p>
+              <input
+                value={adminCode}
+                onChange={(event) => setAdminCode(event.target.value)}
+                placeholder="recovery-admin"
+              />
+              <button type="submit">Unlock admin tools</button>
+            </form>
+          ) : (
+            <>
+              <form className="add-client-form" onSubmit={addClient}>
+                <input
+                  value={newClientName}
+                  onChange={(event) => setNewClientName(event.target.value)}
+                  placeholder="Add a new client"
+                />
+                <button type="submit">Add client</button>
+              </form>
+
+              <div className="client-list">
+                {state.clients.map((client) => {
+                  const clientEligible = isEligible(client);
+
+                  return (
+                    <article className="client-row" key={client.id}>
+                      <div>
+                        <strong>{client.name}</strong>
+                        <p>
+                          {client.lastPrize ? 'Last prize: ' + client.lastPrize : 'No prize awarded yet.'}
+                        </p>
+                      </div>
+                      <div className="client-actions">
+                        <button
+                          type="button"
+                          className={client.attendanceDone ? 'mini-button mini-button--done' : 'mini-button'}
+                          onClick={() => updateClient(client.id, { attendanceDone: !client.attendanceDone })}
+                        >
+                          Attendance {client.attendanceDone ? 'done' : 'pending'}
+                        </button>
+                        <button
+                          type="button"
+                          className={client.uaComplete ? 'mini-button mini-button--done' : 'mini-button'}
+                          onClick={() => updateClient(client.id, { uaComplete: !client.uaComplete })}
+                        >
+                          UA {client.uaComplete ? 'done' : 'pending'}
+                        </button>
+                        <button
+                          type="button"
+                          className={clientEligible ? 'mini-button mini-button--eligible' : 'mini-button'}
+                          onClick={() =>
+                            updateClient(client.id, {
+                              attendanceDone: true,
+                              uaComplete: true,
+                              hasSpun: false,
+                            })
+                          }
+                        >
+                          Mark eligible
+                        </button>
+                        <button
+                          type="button"
+                          className="mini-button"
+                          onClick={() => updateClient(client.id, { hasSpun: false, lastPrize: null })}
+                        >
+                          Reset spin
+                        </button>
+                        <button type="button" className="mini-button mini-button--danger" onClick={() => removeClient(client.id)}>
+                          Remove
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
+
+      <div className="flash-banner">{flash}</div>
+    </div>
+  );
+}
+`;
+
+  const stylesSource = `:root {
+  color-scheme: dark;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.22), transparent 24%),
+    linear-gradient(180deg, #04070f 0%, #08101d 50%, #04060c 100%);
+  color: #f8fbff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.22), transparent 24%),
+    linear-gradient(180deg, #04070f 0%, #08101d 50%, #04060c 100%);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+select,
+input {
+  border-radius: 14px;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+input,
+select {
+  width: 100%;
+  background: rgba(5, 10, 22, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: white;
+  padding: 0.9rem 1rem;
+}
+
+.reward-shell {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.hero-card,
+.workspace-card,
+.flash-banner {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(7, 12, 24, 0.84);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.hero-card,
+.workspace-card {
+  border-radius: 28px;
+}
+
+.hero-card {
+  padding: 28px;
+  display: grid;
+  gap: 20px;
+}
+
+.eyebrow,
+.section-kicker {
+  display: inline-flex;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.eyebrow {
+  color: #6ee7b7;
+  margin-bottom: 12px;
+}
+
+.hero-card h1,
+.workspace-card h2 {
+  margin: 0;
+}
+
+.hero-card p,
+.workspace-card p {
+  color: #aec1df;
+}
+
+.role-switcher {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.tab-button {
+  background: transparent;
+  color: #dce7fb;
+  padding: 0.8rem 1rem;
+}
+
+.tab-button--active,
+.spin-button,
+.add-client-form button,
+.admin-unlock button,
+.mini-button--eligible {
+  background: linear-gradient(135deg, #10b981, #6366f1);
+  color: #03111b;
+  font-weight: 700;
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.95fr);
+  gap: 20px;
+  margin-top: 22px;
+}
+
+.workspace-card {
+  padding: 24px;
+}
+
+.section-heading {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.section-kicker {
+  color: #8fb5ff;
+  margin-bottom: 6px;
+}
+
+.client-select {
+  max-width: 280px;
+}
+
+.wheel-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 18px;
+}
+
+.wheel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+  border-radius: 26px;
+  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.18), rgba(15, 23, 42, 0.9));
+  min-height: 320px;
+}
+
+.wheel--spinning .wheel-segment {
+  animation: pulse 0.35s linear infinite alternate;
+}
+
+.wheel-segment {
+  min-height: 86px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wheel-segment[data-tone='mint'] { background: rgba(16, 185, 129, 0.18); }
+.wheel-segment[data-tone='sky'] { background: rgba(56, 189, 248, 0.18); }
+.wheel-segment[data-tone='violet'] { background: rgba(139, 92, 246, 0.18); }
+.wheel-segment[data-tone='rose'] { background: rgba(244, 63, 94, 0.18); }
+.wheel-segment[data-tone='amber'] { background: rgba(245, 158, 11, 0.18); }
+.wheel-segment[data-tone='teal'] { background: rgba(20, 184, 166, 0.18); }
+
+.wheel-segment--active {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.1), 0 16px 40px rgba(99, 102, 241, 0.35);
+  transform: translateY(-2px);
+}
+
+.spin-panel,
+.status-card,
+.check-card,
+.client-row {
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.spin-panel {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.status-card,
+.check-card {
+  padding: 16px;
+}
+
+.status-card span,
+.check-card span {
+  display: block;
+  color: #8ca3c7;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-card strong,
+.check-card strong {
+  font-size: 1.1rem;
+}
+
+.spin-button {
+  padding: 0.95rem 1.1rem;
+}
+
+.spin-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.helper-text {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.eligibility-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.check-card--done {
+  border-color: rgba(16, 185, 129, 0.32);
+  background: rgba(16, 185, 129, 0.09);
+}
+
+.admin-column {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.admin-unlock,
+.add-client-form,
+.client-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.add-client-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.client-list {
+  display: grid;
+  gap: 12px;
+}
+
+.client-row {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.client-row strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.client-row p {
+  margin: 0;
+}
+
+.mini-button {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.mini-button--done {
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.mini-button--danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.flash-banner {
+  margin-top: 18px;
+  border-radius: 18px;
+  padding: 16px 18px;
+  color: #dbeafe;
+}
+
+@keyframes pulse {
+  from { transform: scale(0.98); }
+  to { transform: scale(1.02); }
+}
+
+@media (max-width: 960px) {
+  .app-grid,
+  .wheel-layout,
+  .eligibility-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .add-client-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .client-select {
+    max-width: none;
+  }
+}
+`;
+
+  return [
+    {
+      path: 'package.json',
+      content: JSON.stringify(
+        {
+          name: projectName,
+          private: true,
+          version: '0.1.0',
+          type: 'module',
+          scripts: {
+            dev: 'vite',
+            build: 'vite build',
+            preview: 'vite preview',
+          },
+          dependencies: {
+            react: '^19.2.0',
+            'react-dom': '^19.2.0',
+          },
+          devDependencies: {
+            '@vitejs/plugin-react': '^5.1.0',
+            vite: '^7.1.12',
+          },
+        },
+        null,
+        2,
+      ),
+    },
+    {
+      path: 'index.html',
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${projectName}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`,
+    },
+    {
+      path: 'src/main.jsx',
+      content: `import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
+import './styles.css';
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+`,
+    },
+    {
+      path: 'src/App.jsx',
+      content: appSource,
+    },
+    {
+      path: 'src/styles.css',
+      content: stylesSource,
+    },
+    {
+      path: 'README.md',
+      content: `# ${projectName}
+
+Generated by OmniForge for a treatment-program rewards workflow.
+
+## Included product flows
+
+- Client-facing spin wheel with fully random prize selection
+- Administrator tools for adding, removing, and managing client eligibility
+- Attendance + consistent UA gating before spin eligibility
+- Local persistence for quick demo and validation runs
+
+## Run
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+`,
+    },
+    {
+      path: 'vite.config.js',
+      content: `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+});
+`,
+    },
+  ];
+}
+
 function buildWebAppFallback(intent) {
+  if (isTreatmentRewardsIntent(intent)) {
+    return buildTreatmentRewardsFallback(intent);
+  }
+
   const projectName = intent.projectName ?? 'omniforge-app';
   const featureFlags = intent.features ?? [];
   const preferredUiStyle = intent.preferences?.preferredUiStyle ?? '';
@@ -932,13 +1804,28 @@ function shouldMergeFallback(intent, files = []) {
   return false;
 }
 
+function hasTreatmentRewardsExperience(files = []) {
+  const appFile = files.find((file) => file.path === 'src/App.jsx');
+  const styleFile = files.find((file) => file.path === 'src/styles.css');
+  const haystack = [appFile?.content ?? '', styleFile?.content ?? ''].join('\n');
+  return /Reward wheel|Spin wheel|Administrator panel|Consistent UA|attendanceDone|uaComplete/.test(haystack);
+}
+
 function mergeFallbackScaffold(intent, files = []) {
+  const mergedFiles = new Map(files.map((file) => [file.path, file]));
+
+  if (isTreatmentRewardsIntent(intent) && !hasTreatmentRewardsExperience(files)) {
+    for (const fallbackFile of buildTreatmentRewardsFallback(intent)) {
+      mergedFiles.set(fallbackFile.path, fallbackFile);
+    }
+    return [...mergedFiles.values()];
+  }
+
   if (!shouldMergeFallback(intent, files)) {
     return files;
   }
 
   const fallbackFiles = buildFallbackFiles(intent);
-  const mergedFiles = new Map(files.map((file) => [file.path, file]));
 
   for (const fallbackFile of fallbackFiles) {
     if (!mergedFiles.has(fallbackFile.path)) {

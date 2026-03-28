@@ -11,6 +11,10 @@ import {
   writeFileSafe,
   writeJsonSafe,
 } from '../engine/fileSystem.js';
+import {
+  createTreatmentRewardsAppScaffold,
+  isTreatmentRewardsBuild,
+} from './treatmentRewardsScaffold.js';
 
 const CODE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
 const STYLE_EXTENSIONS = new Set(['.css', '.scss']);
@@ -511,6 +515,10 @@ input {
 }
 
 function createAppScaffold(projectName, buildOutput = {}) {
+  if (isTreatmentRewardsBuild(buildOutput)) {
+    return createTreatmentRewardsAppScaffold(projectName, buildOutput);
+  }
+
   const featureSet = new Set(buildOutput?.intent?.features ?? []);
   const paymentsEnabled = featureSet.has('payments');
   const authEnabled = featureSet.has('auth');

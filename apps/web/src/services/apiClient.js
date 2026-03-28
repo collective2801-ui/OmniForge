@@ -20,8 +20,19 @@ function inferProductionApiBaseUrl() {
   return '';
 }
 
+function getClientEnv() {
+  return typeof import.meta === 'object' && import.meta?.env ? import.meta.env : {};
+}
+
 export function getApiBaseUrl() {
-  return normalizeBaseUrl(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.NEXT_PUBLIC_API_URL || inferProductionApiBaseUrl());
+  const env = getClientEnv();
+
+  return normalizeBaseUrl(
+    env.VITE_API_URL ||
+      env.VITE_API_BASE_URL ||
+      env.NEXT_PUBLIC_API_URL ||
+      inferProductionApiBaseUrl(),
+  );
 }
 
 export function buildApiUrl(path) {

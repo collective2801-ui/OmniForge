@@ -118,6 +118,18 @@ function inferFeatures(userInput) {
     .filter((rule) => rule.patterns.some((pattern) => pattern.test(userInput)))
     .map((rule) => rule.feature);
 
+  if (/full[-s]?stack|two types of users|users*1|users*2|administrator|admin/i.test(userInput)) {
+    detectedFeatures.push('auth', 'admin_controls', 'database');
+  }
+
+  if (/reward|prize|wheel|spin/i.test(userInput)) {
+    detectedFeatures.push('dashboard');
+  }
+
+  if (/substance|treatment|attendance|ua|screen(?:ing)?|client/i.test(userInput)) {
+    detectedFeatures.push('database');
+  }
+
   if (detectedFeatures.length === 0 && /app|site|platform|dashboard/i.test(userInput)) {
     detectedFeatures.push('responsive_ui');
   }
@@ -136,6 +148,10 @@ function inferProjectType(userInput, goal, features) {
 
   if (goal === 'domain_setup') {
     return 'domain_configuration';
+  }
+
+  if (/full[-s]?stack/i.test(userInput)) {
+    return 'full_stack_app';
   }
 
   if (/landing page|marketing site|homepage/i.test(userInput)) {

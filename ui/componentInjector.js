@@ -225,6 +225,101 @@ export default function FormTemplate({
       },
     ],
   },
+  'reward-wheel': {
+    component: 'reward-wheel',
+    files: [
+      {
+        path: 'src/injected/rewards/RewardWheel.jsx',
+        content: `const wheelStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: '0.85rem',
+  padding: '1.25rem',
+  borderRadius: '22px',
+  background: 'radial-gradient(circle at top, rgba(99, 102, 241, 0.18), rgba(15, 23, 42, 0.9))',
+  border: '1px solid rgba(148, 163, 184, 0.18)',
+};
+
+const segmentStyle = {
+  minHeight: '84px',
+  borderRadius: '16px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+  padding: '0.9rem',
+  background: 'rgba(255, 255, 255, 0.05)',
+  color: '#f8fafc',
+  fontWeight: 700,
+};
+
+export default function RewardWheel({
+  prizes = ['Gift Card', 'Coffee Voucher', 'Snack Pack', 'Transit Pass'],
+} = {}) {
+  return (
+    <section>
+      <h2 style={{ marginTop: 0, color: '#f8fafc' }}>Reward Wheel</h2>
+      <div style={wheelStyle}>
+        {prizes.map((prize) => (
+          <div key={prize} style={segmentStyle}>
+            {prize}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+`,
+      },
+    ],
+  },
+  'client-admin-panel': {
+    component: 'client-admin-panel',
+    files: [
+      {
+        path: 'src/injected/rewards/ClientAdminPanel.jsx',
+        content: `const panelStyle = {
+  display: 'grid',
+  gap: '0.9rem',
+  padding: '1.25rem',
+  borderRadius: '18px',
+  background: 'rgba(15, 23, 42, 0.92)',
+  border: '1px solid rgba(148, 163, 184, 0.18)',
+  color: '#e2e8f0',
+};
+
+const itemStyle = {
+  padding: '0.95rem',
+  borderRadius: '14px',
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(148, 163, 184, 0.12)',
+};
+
+export default function ClientAdminPanel({
+  clients = [
+    { name: 'Jordan M.', attendance: true, ua: true },
+    { name: 'Taylor R.', attendance: true, ua: false },
+  ],
+} = {}) {
+  return (
+    <section style={panelStyle}>
+      <h2 style={{ margin: 0, color: '#f8fafc' }}>Client Admin Panel</h2>
+      {clients.map((client) => (
+        <article key={client.name} style={itemStyle}>
+          <strong>{client.name}</strong>
+          <p style={{ margin: '0.35rem 0 0', color: '#94a3b8' }}>
+            Attendance: {client.attendance ? 'Complete' : 'Pending'} · UA: {client.ua ? 'Complete' : 'Pending'}
+          </p>
+        </article>
+      ))}
+    </section>
+  );
+}
+`,
+      },
+    ],
+  }
+
 });
 
 const COMPONENT_ALIASES = Object.freeze({
@@ -232,6 +327,11 @@ const COMPONENT_ALIASES = Object.freeze({
   'auth-module': 'auth',
   dashboard: 'dashboard',
   'dashboard-layout': 'dashboard',
+  'reward-wheel': 'reward-wheel',
+  wheel: 'reward-wheel',
+  rewards: 'reward-wheel',
+  'client-admin-panel': 'client-admin-panel',
+  'admin-panel': 'client-admin-panel',
   navbar: 'navbar',
   navigation: 'navbar',
   form: 'form',

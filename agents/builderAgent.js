@@ -528,7 +528,277 @@ node api/server.js
 `;
 }
 
+function isTreatmentRewardsIntent(intent = {}) {
+  const source = [
+    intent.summary,
+    intent.userInput,
+    intent.projectName,
+    ...(intent.features ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return /(reward|prize|spin|wheel)/.test(source) && /(treatment|attendance|ua|screen|client|admin|administrator)/.test(source);
+}
+
+function buildTreatmentRewardsPreviewHtml(intent) {
+  const projectName = escapeHtml(intent.projectName ?? 'Treatment Rewards Platform');
+  const summary = escapeHtml(intent.summary ?? 'Client rewards application');
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${projectName} Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --bg: #060912;
+        --surface: rgba(9, 15, 30, 0.88);
+        --surface-soft: rgba(255,255,255,0.04);
+        --border: rgba(148,163,184,0.14);
+        --text: #f8fbff;
+        --muted: #a7b8d6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(16,185,129,0.18), transparent 24%),
+          radial-gradient(circle at top right, rgba(99,102,241,0.2), transparent 26%),
+          linear-gradient(180deg, #04070f 0%, #08101d 52%, #03050b 100%);
+        color: var(--text);
+      }
+      main { width: min(1160px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 40px; }
+      .hero, .panel, .flash { border: 1px solid var(--border); background: var(--surface); box-shadow: 0 24px 70px rgba(2,6,23,0.34); backdrop-filter: blur(18px); }
+      .hero, .panel { border-radius: 28px; }
+      .hero { padding: 28px; display: grid; gap: 16px; }
+      .eyebrow, .kicker { display: inline-flex; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; font-weight: 700; }
+      .eyebrow { color: #6ee7b7; }
+      h1, h2, h3, p { margin: 0; }
+      p { color: var(--muted); }
+      .role-switcher { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); width: fit-content; }
+      .role-button, .spin-button, .admin-form button, .row-actions button { border: 0; border-radius: 14px; cursor: pointer; }
+      .role-button { padding: 12px 14px; background: transparent; color: #dbe6f7; }
+      .role-button.active, .spin-button, .admin-form button, .row-actions button.eligible { background: linear-gradient(135deg, #10b981, #6366f1); color: #041019; font-weight: 700; }
+      .grid { display: grid; grid-template-columns: 1.35fr 0.95fr; gap: 20px; margin-top: 22px; }
+      .panel { padding: 24px; }
+      .section-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 18px; }
+      .wheel-layout { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; }
+      .wheel { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; padding: 18px; border-radius: 24px; background: radial-gradient(circle at top, rgba(99,102,241,0.18), rgba(15,23,42,0.9)); min-height: 320px; }
+      .segment { min-height: 86px; border-radius: 18px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 14px; font-weight: 700; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+      .segment.active { border-color: rgba(255,255,255,0.62); box-shadow: 0 0 0 2px rgba(255,255,255,0.08), 0 18px 40px rgba(99,102,241,0.3); transform: translateY(-2px); }
+      .spin-panel, .status-card, .row, .flash { border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); background: var(--surface-soft); }
+      .spin-panel { padding: 18px; display: grid; gap: 12px; }
+      .status-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+      .status-card { padding: 16px; }
+      .status-card span { display: block; color: #8ca3c7; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+      select, input { width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: rgba(5,10,22,0.84); color: white; }
+      .admin-form, .row-actions, .client-list { display: grid; gap: 12px; }
+      .admin-form { grid-template-columns: minmax(0,1fr) auto; }
+      .row { padding: 16px; display: grid; gap: 14px; }
+      .row-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .row-actions button { padding: 12px 14px; background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(148,163,184,0.14); }
+      .row-actions button.done { color: #6ee7b7; border-color: rgba(16,185,129,0.4); }
+      .flash { margin-top: 18px; padding: 16px 18px; color: #dbeafe; }
+      @media (max-width: 960px) { .grid, .wheel-layout, .status-grid, .admin-form, .row-actions { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <span class="eyebrow">Rendered Product Preview</span>
+        <h1>${projectName}</h1>
+        <p>${summary}</p>
+        <div class="role-switcher">
+          <button class="role-button active" type="button" data-role="client">Client</button>
+          <button class="role-button" type="button" data-role="admin">Administrator</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <span class="kicker">Client experience</span>
+              <h2>Reward wheel</h2>
+            </div>
+            <select id="client-select"></select>
+          </div>
+
+          <div class="wheel-layout">
+            <div class="wheel" id="wheel"></div>
+            <div class="spin-panel">
+              <div class="status-card">
+                <span>Eligibility</span>
+                <strong id="eligibility-label">Ready to spin</strong>
+              </div>
+              <div class="status-card">
+                <span>Last prize</span>
+                <strong id="prize-label">No prize awarded yet</strong>
+              </div>
+              <button class="spin-button" id="spin-button" type="button">Spin wheel</button>
+              <p id="helper-copy">A client can spin only after attendance and a consistent UA are both marked complete.</p>
+            </div>
+          </div>
+
+          <div class="status-grid">
+            <article class="status-card"><span>Attendance</span><strong id="attendance-value">Complete</strong></article>
+            <article class="status-card"><span>Consistent UA</span><strong id="ua-value">Complete</strong></article>
+            <article class="status-card"><span>Spin state</span><strong id="spin-state-value">Available</strong></article>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="section-head">
+            <div>
+              <span class="kicker">Staff controls</span>
+              <h2>Administrator panel</h2>
+            </div>
+          </div>
+          <form class="admin-form" id="add-client-form">
+            <input id="new-client-name" placeholder="Add a new client" />
+            <button type="submit">Add client</button>
+          </form>
+          <div class="client-list" id="client-list"></div>
+        </aside>
+      </section>
+
+      <div class="flash" id="flash-copy">Preview ready. Toggle attendance and UA completion to unlock the wheel.</div>
+    </main>
+
+    <script>
+      const prizes = ['$5 Gift Card', 'Coffee Voucher', 'Snack Pack', 'Transit Pass', 'Bonus Phone Minutes', 'Wellness Journal'];
+      const clients = [
+        { id: 1, name: 'Jordan M.', attendanceDone: true, uaComplete: true, hasSpun: false, lastPrize: null },
+        { id: 2, name: 'Taylor R.', attendanceDone: true, uaComplete: false, hasSpun: false, lastPrize: null },
+        { id: 3, name: 'Alex P.', attendanceDone: false, uaComplete: false, hasSpun: false, lastPrize: null },
+      ];
+      let activeClientId = clients[0].id;
+      let winningIndex = null;
+
+      const wheelEl = document.getElementById('wheel');
+      const clientSelectEl = document.getElementById('client-select');
+      const clientListEl = document.getElementById('client-list');
+      const flashEl = document.getElementById('flash-copy');
+      const eligibilityLabelEl = document.getElementById('eligibility-label');
+      const prizeLabelEl = document.getElementById('prize-label');
+      const attendanceValueEl = document.getElementById('attendance-value');
+      const uaValueEl = document.getElementById('ua-value');
+      const spinStateValueEl = document.getElementById('spin-state-value');
+      const spinButtonEl = document.getElementById('spin-button');
+
+      function randomIndex(length) {
+        if (window.crypto && window.crypto.getRandomValues) {
+          const buffer = new Uint32Array(1);
+          window.crypto.getRandomValues(buffer);
+          return buffer[0] % length;
+        }
+        return Math.floor(Math.random() * length);
+      }
+
+      function getActiveClient() {
+        return clients.find((client) => client.id === activeClientId) || null;
+      }
+
+      function isEligible(client) {
+        return !!client && client.attendanceDone && client.uaComplete && !client.hasSpun;
+      }
+
+      function renderWheel() {
+        wheelEl.innerHTML = prizes.map((prize, index) => '<div class="segment' + (winningIndex === index ? ' active' : '') + '">' + prize + '</div>').join('');
+      }
+
+      function renderSelect() {
+        clientSelectEl.innerHTML = clients.map((client) => '<option value="' + client.id + '">' + client.name + '</option>').join('');
+        clientSelectEl.value = String(activeClientId);
+      }
+
+      function renderStatus() {
+        const client = getActiveClient();
+        const eligible = isEligible(client);
+        eligibilityLabelEl.textContent = eligible ? 'Ready to spin' : 'Needs admin approval';
+        prizeLabelEl.textContent = client && client.lastPrize ? client.lastPrize : 'No prize awarded yet';
+        attendanceValueEl.textContent = client && client.attendanceDone ? 'Complete' : 'Pending';
+        uaValueEl.textContent = client && client.uaComplete ? 'Complete' : 'Pending';
+        spinStateValueEl.textContent = client && client.hasSpun ? 'Already used' : 'Available';
+        spinButtonEl.disabled = !eligible;
+      }
+
+      function renderClients() {
+        clientListEl.innerHTML = clients.map((client) => '<article class="row">\n  <div><strong>' + client.name + '</strong><p>' + (client.lastPrize ? 'Last prize: ' + client.lastPrize : 'No prize awarded yet.') + '</p></div>\n  <div class="row-actions">\n    <button type="button" data-action="attendance" data-id="' + client.id + '" class="' + (client.attendanceDone ? 'done' : '') + '">Attendance</button>\n    <button type="button" data-action="ua" data-id="' + client.id + '" class="' + (client.uaComplete ? 'done' : '') + '">UA complete</button>\n    <button type="button" data-action="eligible" data-id="' + client.id + '" class="eligible">Mark eligible</button>\n    <button type="button" data-action="reset" data-id="' + client.id + '">Reset spin</button>\n  </div>\n</article>').join('');
+      }
+
+      function render() {
+        renderWheel();
+        renderSelect();
+        renderStatus();
+        renderClients();
+      }
+
+      clientSelectEl.addEventListener('change', (event) => {
+        activeClientId = Number(event.target.value);
+        renderStatus();
+      });
+
+      spinButtonEl.addEventListener('click', () => {
+        const client = getActiveClient();
+        if (!isEligible(client)) {
+          flashEl.textContent = 'This client still needs attendance and a consistent UA before spinning.';
+          return;
+        }
+        winningIndex = randomIndex(prizes.length);
+        client.hasSpun = true;
+        client.lastPrize = prizes[winningIndex];
+        flashEl.textContent = client.name + ' won ' + client.lastPrize + '.';
+        render();
+      });
+
+      document.getElementById('add-client-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const input = document.getElementById('new-client-name');
+        const value = input.value.trim();
+        if (!value) {
+          flashEl.textContent = 'Enter a client name before adding them.';
+          return;
+        }
+        const nextClient = { id: Date.now(), name: value, attendanceDone: false, uaComplete: false, hasSpun: false, lastPrize: null };
+        clients.unshift(nextClient);
+        activeClientId = nextClient.id;
+        input.value = '';
+        flashEl.textContent = value + ' added to the reward roster.';
+        render();
+      });
+
+      clientListEl.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const client = clients.find((entry) => entry.id === Number(button.dataset.id));
+        if (!client) return;
+        const action = button.dataset.action;
+        if (action === 'attendance') client.attendanceDone = !client.attendanceDone;
+        if (action === 'ua') client.uaComplete = !client.uaComplete;
+        if (action === 'eligible') { client.attendanceDone = true; client.uaComplete = true; client.hasSpun = false; }
+        if (action === 'reset') { client.hasSpun = false; client.lastPrize = null; winningIndex = null; }
+        flashEl.textContent = client.name + ' updated.';
+        render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>`;
+}
+
 function buildPreviewHtml(intent) {
+  if (isTreatmentRewardsIntent(intent)) {
+    return buildTreatmentRewardsPreviewHtml(intent);
+  }
+
   const featureSet = new Set(intent.features ?? []);
   const referenceBranding = intent.referenceContext?.branding ?? {};
   const dominantColor =

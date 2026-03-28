@@ -667,6 +667,14 @@ function resolveRequestedComponents(userInput = '', intent = {}) {
     requestedComponents.push('dashboard');
   }
 
+  if (/\bwheel\b|\bspin\b|\breward\b|\bprize\b/i.test(userInput)) {
+    requestedComponents.push('reward-wheel');
+  }
+
+  if (/\bclient\b|\badministrator\b|\badmin\b|\beligib/i.test(userInput)) {
+    requestedComponents.push('client-admin-panel');
+  }
+
   if (/\bnavbar\b|\bnavigation\b|\bmodern ui\b|\bmodern\b/i.test(userInput)) {
     requestedComponents.push('navbar');
   }
