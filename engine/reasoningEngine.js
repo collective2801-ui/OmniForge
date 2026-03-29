@@ -45,6 +45,11 @@ const GOAL_RULES = [
   { goal: 'build_app', patterns: [/build/i, /create/i, /generate/i, /scaffold/i, /launch/i, /new app/i, /platform/i, /site/i] },
 ];
 
+function hasProductBuildSignals(userInput = '') {
+  return /\b(build|create|generate|make|launch|scaffold)\b/i.test(userInput)
+    && /\b(app|application|saas|software|platform|site|dashboard|portal|workspace|tool)\b/i.test(userInput);
+}
+
 function assertUserInput(userInput) {
   if (typeof userInput !== 'string' || userInput.trim().length === 0) {
     throw new TypeError('User input must be a non-empty string.');
@@ -107,6 +112,10 @@ function inferGoal(userInput) {
 
   if (/existing (app|project|codebase)/i.test(userInput)) {
     scores.set('modify_app', (scores.get('modify_app') ?? 0) + 2);
+  }
+
+  if (hasProductBuildSignals(userInput)) {
+    scores.set('build_app', (scores.get('build_app') ?? 0) + 3);
   }
 
   const rankedGoals = [...scores.entries()].sort((left, right) => right[1] - left[1]);
@@ -364,11 +373,19 @@ function normalizeIntentCandidate(candidate, userInput, fallbackIntent) {
     return fallbackIntent;
   }
 
-  const goal = normalizeGoal(candidate.goal, fallbackIntent.goal);
+  let goal = normalizeGoal(candidate.goal, fallbackIntent.goal);
   const features = dedupeStrings([
     ...fallbackIntent.features,
     ...normalizeFeatures(candidate.features, []),
   ]);
+
+  if (
+    hasProductBuildSignals(userInput)
+    && (goal === 'deploy' || goal === 'domain_setup')
+  ) {
+    goal = 'build_app';
+  }
+
   const projectType = normalizeProjectType(
     candidate.projectType,
     inferProjectType(userInput, goal, features),

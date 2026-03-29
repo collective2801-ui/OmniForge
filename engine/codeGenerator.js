@@ -84,6 +84,49 @@ function buildFeatureFlagArray(features) {
   return JSON.stringify(features, null, 2);
 }
 
+function isApplicationArtifactIntent(intent = {}) {
+  if (['web_app', 'full_stack_app', 'landing_page', 'internal_tool'].includes(intent.projectType)) {
+    return true;
+  }
+
+  if (intent.goal === 'build_app') {
+    return true;
+  }
+
+  const source = [
+    intent.summary,
+    intent.userInput,
+    intent.projectName,
+    ...(intent.steps ?? []),
+    ...(intent.assumptions ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (
+    /\b(build|create|generate|make|launch|scaffold)\b/i.test(source)
+    && /\b(app|application|saas|software|platform|site|dashboard|portal|workspace|tool)\b/i.test(source)
+  ) {
+    return true;
+  }
+
+  return (intent.features ?? []).some((feature) =>
+    [
+      'responsive_ui',
+      'dashboard',
+      'todo_management',
+      'agenda_management',
+      'auth',
+      'user_auth',
+      'payments',
+      'subscription_billing',
+      'file_uploads',
+      'search',
+      'admin_controls',
+    ].includes(feature),
+  );
+}
+
 function isTreatmentRewardsIntent(intent = {}) {
   const source = [
     intent.summary,
@@ -2318,10 +2361,19 @@ function buildFallbackFiles(intent) {
     case 'create_api':
       return buildApiFallback(intent);
     case 'deploy':
+      if (isApplicationArtifactIntent(intent)) {
+        return buildWebAppFallback(intent);
+      }
       return buildWorkflowFallback(intent, 'deployment', 'Deployment Workflow');
     case 'domain_setup':
+      if (isApplicationArtifactIntent(intent)) {
+        return buildWebAppFallback(intent);
+      }
       return buildWorkflowFallback(intent, 'domain', 'Domain Setup Workflow');
     case 'modify_app':
+      if (isApplicationArtifactIntent(intent)) {
+        return buildWebAppFallback(intent);
+      }
       return buildWorkflowFallback(intent, 'changes', 'Application Modification Plan');
     case 'build_app':
     default:
@@ -2334,12 +2386,39 @@ function hasReactEntryFile(files = []) {
 }
 
 function getRequiredFallbackPaths(intent) {
+  if (isApplicationArtifactIntent(intent)) {
+    return new Set([
+      'package.json',
+      'README.md',
+      'index.html',
+      'src/main.jsx',
+      'src/App.jsx',
+      'src/styles.css',
+      'vite.config.js',
+    ]);
+  }
+
   switch (intent.goal) {
     case 'create_api':
       return new Set([
         'package.json',
         'README.md',
         'server.js',
+      ]);
+    case 'deploy':
+      return new Set([
+        'deployment/plan.md',
+        'deployment/manifest.json',
+      ]);
+    case 'domain_setup':
+      return new Set([
+        'domain/plan.md',
+        'domain/manifest.json',
+      ]);
+    case 'modify_app':
+      return new Set([
+        'changes/plan.md',
+        'changes/manifest.json',
       ]);
     case 'build_app':
     default:
@@ -2364,7 +2443,7 @@ function shouldMergeFallback(intent, files = []) {
     }
   }
 
-  if (intent.goal !== 'create_api' && !hasReactEntryFile(files)) {
+  if (isApplicationArtifactIntent(intent) && !hasReactEntryFile(files)) {
     return true;
   }
 

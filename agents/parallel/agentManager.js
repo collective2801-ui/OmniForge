@@ -12,6 +12,33 @@ const ROLES = Object.freeze([
 ]);
 const MAX_RETRIES = 2;
 
+function expectsApplicationFiles(intent = {}) {
+  if (intent.projectType === 'api_service') {
+    return false;
+  }
+
+  if (['web_app', 'full_stack_app', 'landing_page', 'internal_tool'].includes(intent.projectType)) {
+    return true;
+  }
+
+  if (intent.goal === 'build_app') {
+    return true;
+  }
+
+  const source = [
+    intent.summary,
+    intent.userInput,
+    intent.projectName,
+    ...(intent.steps ?? []),
+    ...(intent.assumptions ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return /\b(build|create|generate|make|launch|scaffold)\b/i.test(source)
+    && /\b(app|application|saas|software|platform|site|dashboard|portal|workspace|tool)\b/i.test(source);
+}
+
 function assertParallelContext(context) {
   if (!context || typeof context !== 'object') {
     throw new TypeError('Parallel agent context must be an object.');
@@ -154,6 +181,19 @@ function findRequiredPaths(intent) {
     return ['package.json', 'README.md'];
   }
 
+  if (!expectsApplicationFiles(intent)) {
+    switch (intent.goal) {
+      case 'deploy':
+        return ['deployment/plan.md', 'deployment/manifest.json'];
+      case 'domain_setup':
+        return ['domain/plan.md', 'domain/manifest.json'];
+      case 'modify_app':
+        return ['changes/plan.md', 'changes/manifest.json'];
+      default:
+        break;
+    }
+  }
+
   return ['package.json', 'README.md', 'index.html'];
 }
 
@@ -167,10 +207,7 @@ function runReviewer(plan, files, intent, attempt) {
     }
   }
 
-  if (
-    intent.projectType !== 'api_service' &&
-    !files.some((file) => file.path === 'src/main.jsx' || file.path === 'src/App.jsx')
-  ) {
+  if (expectsApplicationFiles(intent) && !files.some((file) => file.path === 'src/main.jsx' || file.path === 'src/App.jsx')) {
     issues.push('Web application output is missing a React entry file.');
   }
 
