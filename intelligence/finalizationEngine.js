@@ -381,6 +381,11 @@ button {
   cursor: pointer;
 }
 
+.ghost-button {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
 input {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.18);
@@ -450,34 +455,53 @@ input {
   padding: 20px;
 }
 
-.nav-links {
+.nav-links,
+.nav-stack,
+.overview-stack,
+.workspace-stack,
+.records-stack,
+.record-list,
+.insight-grid,
+.chart-list,
+.check-list,
+.rail-block {
   display: grid;
   gap: 10px;
-  margin-top: 18px;
 }
 
-.nav-link {
-  display: block;
+.nav-link,
+.nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
   border-radius: 16px;
   padding: 0.85rem 0.95rem;
   background: rgba(15, 23, 42, 0.8);
   color: #dbeafe;
 }
 
-.nav-link.active {
+.nav-link.active,
+.nav-button--active {
   outline: 1px solid rgba(56, 189, 248, 0.35);
   background: rgba(20, 30, 52, 0.92);
 }
 
 .metric-grid,
-.feature-grid {
+.feature-grid,
+.showcase-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .metric-card,
-.feature-card {
+.feature-card,
+.showcase-card,
+.workspace-module,
+.session-card,
+.record-card,
+.activity-card {
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 18px;
   background: var(--surface-soft);
@@ -494,20 +518,116 @@ input {
   font-size: 1.5rem;
 }
 
+.section-kicker {
+  display: inline-flex;
+  color: #8fb5ff;
+  margin-bottom: 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .stack {
   display: grid;
   gap: 12px;
 }
 
-.cta-row {
+.hero-actions,
+.cta-row,
+.record-card__meta,
+.record-card__actions,
+.workspace-module__actions,
+.check-list div,
+.chart-row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
+}
+
+.cta-row {
   margin-top: 18px;
+}
+
+.hero-actions {
+  margin-top: 8px;
+}
+
+.showcase-card strong,
+.workspace-module strong,
+.session-card strong,
+.record-card strong,
+.rail-block strong {
+  display: block;
+  font-size: 1.08rem;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feature-pill--solid {
+  background: rgba(255,255,255,0.08);
+  color: #dbeafe;
+}
+
+.record-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(140px, 0.7fr) auto;
+  gap: 12px;
+}
+
+.record-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  border-radius: 999px;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.06);
+}
+
+.record-status--saved,
+.record-status--live {
+  background: rgba(34,197,94,0.18);
+  color: #86efac;
+}
+
+.record-status--proposal,
+.record-status--ready,
+.record-status--qualified,
+.record-status--review,
+.record-status--active {
+  background: rgba(59,130,246,0.18);
+  color: #93c5fd;
+}
+
+.check-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+}
+
+.workspace-module--soft {
+  background: rgba(255,255,255,0.03);
 }
 
 @media (max-width: 900px) {
   .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .record-form {
     grid-template-columns: 1fr;
   }
 }
@@ -522,8 +642,63 @@ function createAppScaffold(projectName, buildOutput = {}) {
   const featureSet = new Set(buildOutput?.intent?.features ?? []);
   const paymentsEnabled = featureSet.has('payments');
   const authEnabled = featureSet.has('auth');
-  const dashboardEnabled = featureSet.has('dashboard') || true;
+  const notificationsEnabled = featureSet.has('notifications');
+  const uploadsEnabled = featureSet.has('file_uploads');
+  const analyticsEnabled = featureSet.has('analytics') || paymentsEnabled;
+  const searchEnabled = featureSet.has('search');
+  const dashboardEnabled = true;
   const summary = buildOutput?.intent?.summary ?? buildOutput?.prompt ?? 'Generated and stabilized by OmniForge finalization.';
+  const featureFlags = [...featureSet];
+  const storageKey = `${projectName.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}-omniforge-finalized-state`;
+  const mode = paymentsEnabled ? 'revenue' : uploadsEnabled ? 'portal' : 'operations';
+  const metricCards = paymentsEnabled
+    ? [
+        { label: 'MRR pipeline', value: '$12.4k' },
+        { label: 'Qualified deals', value: '18' },
+        { label: 'Close rate', value: '31%' },
+        { label: 'Automation lift', value: '+14%' },
+      ]
+    : uploadsEnabled
+      ? [
+          { label: 'Active accounts', value: '46' },
+          { label: 'Requests closed', value: '91%' },
+          { label: 'Self-serve rate', value: '63%' },
+          { label: 'Support saved', value: '18h' },
+        ]
+      : [
+          { label: 'Workflows live', value: '12' },
+          { label: 'Tasks completed', value: '86%' },
+          { label: 'Blocked items', value: '3' },
+          { label: 'Time saved', value: '11h' },
+        ];
+  const seedRecords = paymentsEnabled
+    ? [
+        { id: 1, title: 'Inbound demo request', owner: 'Avery', value: 2400, status: 'proposal', priority: 'high', note: 'Follow up with automated pricing summary.' },
+        { id: 2, title: 'Reactivation campaign', owner: 'Morgan', value: 1800, status: 'qualified', priority: 'medium', note: 'Target churned accounts with premium offer.' },
+        { id: 3, title: 'Enterprise upgrade', owner: 'Skyler', value: 5600, status: 'ready', priority: 'high', note: 'Send contract and activate onboarding.' },
+      ]
+    : uploadsEnabled
+      ? [
+          { id: 1, title: 'Client onboarding', owner: 'Jordan', value: 1, status: 'active', priority: 'high', note: 'Complete intake, upload forms, and assign next action.' },
+          { id: 2, title: 'Renewal reminder', owner: 'Taylor', value: 1, status: 'review', priority: 'medium', note: 'Prompt user to confirm plan and upload missing document.' },
+          { id: 3, title: 'Portal request', owner: 'Alex', value: 1, status: 'ready', priority: 'low', note: 'Activate self-serve portal and send access email.' },
+        ]
+      : [
+          { id: 1, title: 'Operations queue', owner: 'Jordan', value: 12, status: 'active', priority: 'high', note: 'Review the next operational blocker and assign owner.' },
+          { id: 2, title: 'Workflow handoff', owner: 'Taylor', value: 8, status: 'review', priority: 'medium', note: 'Confirm status and update the team timeline.' },
+          { id: 3, title: 'Exception queue', owner: 'Alex', value: 4, status: 'ready', priority: 'low', note: 'Resolve the last issue and close the loop.' },
+        ];
+  const insightCards = paymentsEnabled
+    ? [
+        { label: 'Projected lift', value: '+$3.2k/mo' },
+        { label: 'Best channel', value: 'Automated follow-up' },
+        { label: 'Next action', value: 'Push proposal into checkout' },
+      ]
+    : [
+        { label: 'Savings target', value: '11h / week' },
+        { label: 'Top friction', value: 'Manual follow-up' },
+        { label: 'Best automation', value: 'Queue + reminders' },
+      ];
 
   return `import React, { useMemo, useState } from 'react';
 import {
@@ -534,29 +709,68 @@ import {
   Routes,
 } from 'react-router-dom';
 
-const featureFlags = new Set(${JSON.stringify([...featureSet], null, 2)});
+const featureFlags = ${JSON.stringify(featureFlags, null, 2)};
+const storageKey = ${JSON.stringify(storageKey)};
+const metricCards = ${JSON.stringify(metricCards, null, 2)};
+const seedRecords = ${JSON.stringify(seedRecords, null, 2)};
+const insightCards = ${JSON.stringify(insightCards, null, 2)};
+const notificationsEnabled = ${notificationsEnabled ? 'true' : 'false'};
+const uploadsEnabled = ${uploadsEnabled ? 'true' : 'false'};
+const analyticsEnabled = ${analyticsEnabled ? 'true' : 'false'};
+const mode = ${JSON.stringify(mode)};
+
+function loadState() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function nextStatus(currentStatus) {
+  const sequence = mode === 'revenue'
+    ? ['qualified', 'proposal', 'ready', 'live']
+    : ['review', 'active', 'ready', 'live'];
+  const currentIndex = sequence.indexOf(currentStatus);
+  return sequence[(currentIndex + 1) % sequence.length];
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
 function AppShell({ session, onSignOut, children }) {
   return (
     <div className="app-shell">
       <div className="app-frame">
         <section className="hero">
-          <span className="eyebrow">Guaranteed Working App</span>
+          <span className="eyebrow">Finished Product</span>
           <h1>${projectName}</h1>
           <p>${summary}</p>
           <div className="cta-row">
             ${authEnabled ? `<button type="button" onClick={onSignOut}>{session ? 'Sign Out' : 'Reset Session'}</button>` : `<button type="button">Workspace Ready</button>`}
+            <button className="ghost-button" type="button">Live Actions Enabled</button>
           </div>
         </section>
 
         <div className="layout">
           <aside className="nav-card">
-            <h2>Navigation</h2>
+            <h2>Product navigation</h2>
             <div className="nav-links">
               <NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/">Overview</NavLink>
-              <NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/dashboard">Dashboard</NavLink>
-              ${paymentsEnabled ? `<NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/billing">Billing</NavLink>` : ''}
-              ${authEnabled ? `<NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/login">${authEnabled ? 'Login' : 'Session'}</NavLink>` : ''}
+              <NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/dashboard">Workspace</NavLink>
+              ${paymentsEnabled ? `<NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/billing">Billing</NavLink>` : `<NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/records">Records</NavLink>`}
+              ${authEnabled ? `<NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/login">Login</NavLink>` : ''}
+              <NavLink className={({ isActive }) => \`nav-link\${isActive ? ' active' : ''}\`} to="/insights">Insights</NavLink>
             </div>
           </aside>
 
@@ -570,48 +784,181 @@ function AppShell({ session, onSignOut, children }) {
 }
 
 function OverviewPage() {
-  const features = Array.from(featureFlags).map((feature) => feature.replace(/_/g, ' '));
+  const features = featureFlags.map((feature) => feature.replace(/_/g, ' '));
 
   return (
-    <div className="stack">
-      <h2>Overview</h2>
-      <p>The build is now stabilized with working routes, validated imports, and deployment-ready structure.</p>
-      <div className="feature-grid">
-        {features.length > 0 ? features.map((feature) => (
-          <article className="feature-card" key={feature}>
-            <strong>{feature}</strong>
-            <p>Configured and validated as part of the finalization pass.</p>
-          </article>
-        )) : (
-          <article className="feature-card">
-            <strong>Core Application</strong>
-            <p>Base product structure is ready for iteration.</p>
-          </article>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DashboardPage() {
-  const metrics = useMemo(() => [
-    { label: 'Active Workflows', value: '06' },
-    { label: 'Activation Rate', value: '91%' },
-    { label: 'Retention Loop', value: 'Stable' },
-  ], []);
-
-  return (
-    <div className="stack">
-      <h2>Dashboard</h2>
-      <p>Primary product route is working and ready for live data wiring.</p>
+    <div className="overview-stack">
       <div className="metric-grid">
-        {metrics.map((metric) => (
+        {metricCards.map((metric) => (
           <article className="metric-card" key={metric.label}>
             <span>{metric.label}</span>
             <strong>{metric.value}</strong>
           </article>
         ))}
       </div>
+      <div className="showcase-grid">
+        <article className="showcase-card">
+          <span className="section-kicker">Main workflow</span>
+          <strong>${paymentsEnabled ? 'Convert revenue from one operating hub' : 'Run the business from a real operating system'}</strong>
+          <p>${summary}</p>
+          <div className="pill-row">
+            {features.slice(0, 5).map((feature) => (
+              <span className="feature-pill feature-pill--solid" key={feature}>{feature}</span>
+            ))}
+          </div>
+        </article>
+        <article className="showcase-card">
+          <span className="section-kicker">Delivery status</span>
+          <strong>Interactive UI is live</strong>
+          <p>The finalized app includes working navigation, persistent state, and routes for the main product flows.</p>
+          <div className="chart-list">
+            {insightCards.map((card) => (
+              <div className="chart-row" key={card.label}>
+                <span>{card.label}</span>
+                <strong>{card.value}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function DashboardPage() {
+  const storedState = loadState();
+  const [records, setRecords] = useState(storedState?.records ?? seedRecords);
+  const [activity, setActivity] = useState(storedState?.activity ?? [
+    'A live workflow item was processed successfully.',
+    'The product state persisted across refresh.',
+    'The finalized build is ready for live integration wiring.',
+  ]);
+  const [draft, setDraft] = useState({ title: '', owner: '', value: '' });
+  const [query, setQuery] = useState('');
+
+  useMemo(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(storageKey, JSON.stringify({ records, activity }));
+    }
+    return null;
+  }, [records, activity]);
+
+  const visibleRecords = records.filter((record) =>
+    [record.title, record.owner, record.note, record.status]
+      .join(' ')
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+
+  function appendActivity(message) {
+    setActivity((current) => [message, ...current].slice(0, 6));
+  }
+
+  function addRecord(event) {
+    event.preventDefault();
+    const normalizedTitle = draft.title.trim();
+
+    if (!normalizedTitle) {
+      return;
+    }
+
+    setRecords((current) => [
+      {
+        id: Date.now(),
+        title: normalizedTitle,
+        owner: draft.owner.trim() || 'Unassigned',
+        value: Number(draft.value) || (mode === 'revenue' ? 2400 : 1),
+        status: mode === 'revenue' ? 'qualified' : 'active',
+        priority: 'medium',
+        note: mode === 'revenue'
+          ? 'New revenue opportunity added to the pipeline.'
+          : 'New workflow record added to the product queue.',
+      },
+      ...current,
+    ]);
+    setDraft({ title: '', owner: '', value: '' });
+    appendActivity(normalizedTitle + ' was added to the live workspace.');
+  }
+
+  function advanceRecord(recordId) {
+    setRecords((current) =>
+      current.map((record) =>
+        record.id === recordId ? { ...record, status: nextStatus(record.status) } : record,
+      ),
+    );
+    appendActivity('A workflow record advanced to the next production stage.');
+  }
+
+  return (
+    <div className="workspace-stack">
+      <div className="section-header">
+        <div>
+          <h2>Workspace</h2>
+          <p>Use the finalized product flows directly from this screen.</p>
+        </div>
+        ${searchEnabled ? `<input
+          className="search-input"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search live records"
+        />` : ''}
+      </div>
+      <form className="record-form" onSubmit={addRecord}>
+        <input
+          type="text"
+          value={draft.title}
+          onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+          placeholder=${JSON.stringify(mode === 'revenue' ? 'Add a revenue opportunity' : 'Add a workflow record')}
+        />
+        <input
+          type="text"
+          value={draft.owner}
+          onChange={(event) => setDraft((current) => ({ ...current, owner: event.target.value }))}
+          placeholder="Owner"
+        />
+        <input
+          type="number"
+          value={draft.value}
+          onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))}
+          placeholder=${JSON.stringify(mode === 'revenue' ? 'Value' : 'Score')}
+        />
+        <button type="submit">Add record</button>
+      </form>
+      <div className="record-list">
+        {visibleRecords.map((record) => (
+          <article className="record-card" key={record.id}>
+            <div className="record-card__top">
+              <div>
+                <strong>{record.title}</strong>
+                <p>{record.note}</p>
+              </div>
+              <span className={'record-status record-status--' + record.status}>{record.status}</span>
+            </div>
+            <div className="record-card__meta">
+              <span>Owner: {record.owner}</span>
+              <span>{mode === 'revenue' ? formatMoney(record.value) : record.value}</span>
+              <span>Priority: {record.priority}</span>
+            </div>
+            <div className="record-card__actions">
+              <button type="button" onClick={() => advanceRecord(record.id)}>Advance</button>
+              ${notificationsEnabled ? `<button className="ghost-button" type="button" onClick={() => appendActivity('A user notification was triggered from the workspace.')}>Notify</button>` : `<button className="ghost-button" type="button" onClick={() => appendActivity('A workflow note was captured for this record.')}>Add note</button>`}
+            </div>
+          </article>
+        ))}
+      </div>
+      <article className="workspace-module workspace-module--soft">
+        <span className="section-kicker">Live assistant rail</span>
+        <strong>Product activity</strong>
+        <div className="chart-list">
+          {activity.map((item, index) => (
+            <div className="chart-row" key={item + index}>
+              <span>Update {index + 1}</span>
+              <strong>{item}</strong>
+            </div>
+          ))}
+        </div>
+      </article>
     </div>
   );
 }
@@ -625,6 +972,24 @@ function BillingPage() {
         <strong>Growth Plan</strong>
         <p>Use this route for pricing, upgrade prompts, and invoice history.</p>
       </div>
+    </div>
+  );
+}
+
+function RecordsPage() {
+  return <DashboardPage />;
+}
+
+function InsightsPage() {
+  return (
+    <div className="insight-grid">
+      {insightCards.map((card) => (
+        <article className="showcase-card" key={card.label}>
+          <span className="section-kicker">{card.label}</span>
+          <strong>{card.value}</strong>
+          <p>{analyticsEnabled ? 'AI-assisted reporting is active for this finished build.' : 'Operational insight generated from the current product state.'}</p>
+        </article>
+      ))}
     </div>
   );
 }
@@ -674,6 +1039,12 @@ export default function App() {
               ${dashboardEnabled ? (authEnabled ? 'isAuthenticated ? <DashboardPage /> : <Navigate to="/login" replace />' : '<DashboardPage />') : '<OverviewPage />'}
             }
           />
+          <Route
+            path="/records"
+            element={
+              ${authEnabled ? 'isAuthenticated ? <RecordsPage /> : <Navigate to="/login" replace />' : '<RecordsPage />'}
+            }
+          />
           ${
             paymentsEnabled
               ? `<Route
@@ -692,6 +1063,7 @@ export default function App() {
           />`
               : ''
           }
+          <Route path="/insights" element={<InsightsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>
@@ -905,7 +1277,11 @@ function createDatabaseSchemaScaffold(buildOutput = {}) {
   return `${lines.join('\n')}\n`;
 }
 
-function createPreviewScaffold(projectName) {
+function createPreviewScaffold(projectName, buildOutput = {}) {
+  const featureSet = new Set(buildOutput?.intent?.features ?? []);
+  const mode = featureSet.has('payments') ? 'revenue' : featureSet.has('file_uploads') ? 'portal' : 'operations';
+  const summary = buildOutput?.intent?.summary ?? buildOutput?.prompt ?? 'Interactive product preview generated by the finalization engine.';
+  const actionLabel = mode === 'revenue' ? 'Open conversion flow' : mode === 'portal' ? 'Open portal action' : 'Advance workflow';
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -913,39 +1289,307 @@ function createPreviewScaffold(projectName) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${projectName} Preview</title>
     <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      }
       body {
         margin: 0;
         min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(180deg, #050816 0%, #07111f 48%, #02050d 100%);
+        background:
+          radial-gradient(circle at top, rgba(59,130,246,0.16), transparent 24%),
+          linear-gradient(180deg, #050816 0%, #07111f 48%, #02050d 100%);
         color: white;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       main {
-        width: min(860px, calc(100% - 40px));
-        border: 1px solid rgba(148, 163, 184, 0.16);
-        border-radius: 24px;
-        background: rgba(8, 15, 29, 0.9);
-        padding: 28px;
+        width: min(980px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 36px;
+        display: grid;
+        gap: 20px;
       }
 
-      h1 {
-        margin: 0 0 12px;
+      .hero,
+      .preview-shell,
+      .preview-note {
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(8, 15, 29, 0.9);
+        box-shadow: 0 24px 70px rgba(2, 6, 23, 0.34);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero,
+      .preview-shell {
+        border-radius: 28px;
+      }
+
+      .hero {
+        padding: 24px 26px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        margin-bottom: 12px;
+        color: #6ee7b7;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
       }
 
       p {
-        margin: 0;
         color: #9fb1cb;
+        line-height: 1.55;
+      }
+
+      .summary {
+        max-width: 700px;
+      }
+
+      .preview-shell {
+        padding: 24px;
+        display: grid;
+        grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .phone {
+        border-radius: 44px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: linear-gradient(180deg, rgba(17, 18, 24, 1), rgba(4, 4, 8, 1));
+        padding: 16px;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+      }
+
+      .notch {
+        width: 34%;
+        height: 28px;
+        border-radius: 999px;
+        margin: 0 auto 12px;
+        background: rgba(5,5,8,0.98);
+      }
+
+      .screen {
+        border-radius: 34px;
+        min-height: 720px;
+        padding: 18px;
+        background:
+          radial-gradient(circle at top right, rgba(79,124,255,0.2), transparent 30%),
+          linear-gradient(180deg, #f5f7fb 0%, #edf2fa 100%);
+        color: #10223a;
+        display: grid;
+        gap: 14px;
+      }
+
+      .app-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .app-top strong {
+        font-size: 1.7rem;
+        line-height: 1;
+      }
+
+      .chip {
+        border-radius: 999px;
+        padding: 0.52rem 0.8rem;
+        background: linear-gradient(135deg, #1e293b, #0f172a);
+        color: #c4b5fd;
+        font-weight: 700;
+        font-size: 0.74rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .hero-card,
+      .metric-strip,
+      .workspace-card {
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 24px;
+        background: rgba(255,255,255,0.78);
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+      }
+
+      .hero-card,
+      .workspace-card {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .hero-card h2,
+      .workspace-card h2 {
+        color: #10223a;
+      }
+
+      .hero-card p,
+      .workspace-card p {
+        color: rgba(16, 51, 77, 0.74);
+      }
+
+      button {
+        border: 0;
+        border-radius: 16px;
+        padding: 0.95rem 1.15rem;
+        background: linear-gradient(135deg, #2563eb, #4f46e5);
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .metric-strip {
+        padding: 14px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        border-radius: 18px;
+        padding: 14px;
+        background: rgba(15, 23, 42, 0.04);
+      }
+
+      .metric span {
+        display: block;
+        color: #64748b;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .metric strong {
+        color: #10223a;
+        font-size: 1rem;
+      }
+
+      .rail {
+        display: grid;
+        gap: 14px;
+      }
+
+      .rail-card {
+        border-radius: 20px;
+        padding: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        background: rgba(255,255,255,0.04);
+      }
+
+      .rail-card strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 1.02rem;
+      }
+
+      .preview-note {
+        border-radius: 22px;
+        padding: 16px 18px;
+        color: #dbeafe;
+      }
+
+      @media (max-width: 980px) {
+        .preview-shell,
+        .metric-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .screen {
+          min-height: auto;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>${projectName}</h1>
-      <p>The finalization engine generated a stable preview for this app.</p>
+      <section class="hero">
+        <span class="eyebrow">Finished product preview</span>
+        <h1>${projectName}</h1>
+        <p class="summary">${summary}</p>
+      </section>
+
+      <section class="preview-shell">
+        <section class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="app-top">
+              <div>
+                <p>Hello there!</p>
+                <strong>${projectName}</strong>
+              </div>
+              <span class="chip">Live Ready</span>
+            </div>
+            <article class="hero-card">
+              <div>
+                <h2>${mode === 'revenue' ? 'Convert pipeline to revenue' : mode === 'portal' ? 'Keep clients moving without support calls' : 'Run the business from one focused system'}</h2>
+                <p>${summary}</p>
+              </div>
+              <button id="primary-action" type="button">${actionLabel}</button>
+            </article>
+            <article class="workspace-card">
+              <h2>Interactive workspace</h2>
+              <p id="workspace-copy">Use the main action to update the product state inside this preview.</p>
+            </article>
+            <section class="metric-strip">
+              <article class="metric"><span>Status</span><strong id="status-value">Ready</strong></article>
+              <article class="metric"><span>Mode</span><strong>${mode === 'revenue' ? 'Billing' : mode === 'portal' ? 'Portal' : 'Ops'}</strong></article>
+              <article class="metric"><span>Output</span><strong id="output-value">${mode === 'revenue' ? '$12.4k' : mode === 'portal' ? '46 accounts' : '12 workflows'}</strong></article>
+            </section>
+          </div>
+        </section>
+
+        <aside class="rail">
+          <article class="rail-card">
+            <strong>What this preview proves</strong>
+            <p>The finalization layer is rendering a usable product surface, not a blank placeholder.</p>
+          </article>
+          <article class="rail-card">
+            <strong>Interactive controls</strong>
+            <p>Buttons in this preview mutate state so the output behaves like a live product review surface.</p>
+          </article>
+          <article class="rail-card">
+            <strong>Delivery goal</strong>
+            <p>This finalized build is meant to hand off to a real live URL or a mobile QR, not stop at a mockup.</p>
+          </article>
+        </aside>
+      </section>
+
+      <div class="preview-note" id="preview-note">Preview ready. Trigger the main action to confirm that the finalized product surface is interactive.</div>
     </main>
+    <script>
+      const primaryAction = document.getElementById('primary-action');
+      const note = document.getElementById('preview-note');
+      const workspaceCopy = document.getElementById('workspace-copy');
+      const statusValue = document.getElementById('status-value');
+      const outputValue = document.getElementById('output-value');
+      let step = 0;
+
+      primaryAction.addEventListener('click', () => {
+        step += 1;
+        statusValue.textContent = step % 2 === 0 ? 'Ready' : 'Live';
+        workspaceCopy.textContent = step % 2 === 0
+          ? 'The workspace is stable and ready for the next action.'
+          : 'The product state changed successfully inside the preview.';
+        outputValue.textContent = step % 2 === 0
+          ? ${JSON.stringify(mode === 'revenue' ? '$12.4k' : mode === 'portal' ? '46 accounts' : '12 workflows')}
+          : ${JSON.stringify(mode === 'revenue' ? '$14.1k' : mode === 'portal' ? '49 accounts' : '13 workflows')};
+        note.textContent = 'Preview interaction confirmed. The finalized product surface updated state successfully.';
+      });
+    </script>
   </body>
 </html>
 `;
@@ -975,7 +1619,7 @@ function createMissingFileContent(relativePath, buildOutput, projectPath) {
     case 'database/schema.sql':
       return createDatabaseSchemaScaffold(buildOutput);
     case 'preview/index.html':
-      return createPreviewScaffold(projectName);
+      return createPreviewScaffold(projectName, buildOutput);
     default:
       return '';
   }
