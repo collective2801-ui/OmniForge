@@ -110,6 +110,23 @@ function getBusinessTerms(profile = {}) {
   }
 }
 
+function getIdeaAnchors(profile = {}, terms = {}) {
+  const offers = Array.isArray(profile.offerNames) ? profile.offerNames.filter(Boolean) : [];
+  const contentThemes = Array.isArray(profile.contentThemes) ? profile.contentThemes.filter(Boolean) : [];
+  const keywords = Array.isArray(profile.keywords) ? profile.keywords.filter(Boolean) : [];
+  const primaryOffer = titleCase(offers[0] || profile.primaryOffer || keywords[0] || terms.output || 'Core Workflow');
+  const secondaryOffer = titleCase(offers[1] || keywords[1] || `${primaryOffer} Delivery`);
+  const contentAnchor = titleCase(contentThemes[0] || offers[2] || keywords[2] || `${primaryOffer} Education`);
+  const commerceAnchor = titleCase(offers[3] || keywords[3] || primaryOffer);
+
+  return {
+    primaryOffer,
+    secondaryOffer,
+    contentAnchor,
+    commerceAnchor,
+  };
+}
+
 function getOfferLabel(moneyType = 'hybrid') {
   switch (moneyType) {
     case 'growth':
@@ -233,6 +250,12 @@ function createPrompt(analysis, option) {
   const featureSummary = Array.isArray(option.featureList)
     ? option.featureList.join(', ')
     : option.features.join(', ');
+  const offerSummary = Array.isArray(profile.offerNames) && profile.offerNames.length > 0
+    ? `Website products/services detected: ${profile.offerNames.join(', ')}.`
+    : '';
+  const contentSummary = Array.isArray(profile.contentThemes) && profile.contentThemes.length > 0
+    ? `Content themes detected: ${profile.contentThemes.join(', ')}.`
+    : '';
 
   return [
     `Build a complete ${option.projectType === 'mobile' ? 'mobile app' : 'web app'} named ${option.name}.`,
@@ -240,6 +263,8 @@ function createPrompt(analysis, option) {
     profile.categoryLabel ? `Business category: ${profile.categoryLabel}.` : '',
     profile.businessModel ? `Business model: ${profile.businessModel}.` : '',
     profile.audience ? `Primary users: ${profile.audience}.` : '',
+    offerSummary,
+    contentSummary,
     pains ? `Problems this product must solve: ${pains}` : '',
     `Product concept: ${option.description}`,
     `Why this matters: ${option.usefulness}`,
@@ -255,6 +280,7 @@ function createPrompt(analysis, option) {
 function createIdeasForProfile(sourceLabel, analysis) {
   const profile = analysis.businessProfile ?? {};
   const terms = getBusinessTerms(profile);
+  const anchors = getIdeaAnchors(profile, terms);
   const baseFeatures = unique(analysis.features ?? []);
   const normalizedLabel = truncateLabel(sourceLabel);
   const primaryNeeds = {
@@ -265,14 +291,15 @@ function createIdeasForProfile(sourceLabel, analysis) {
   const options = [
     {
       id: 'revenue-engine',
-      name: `${titleCase(terms.lead)} Conversion Engine`,
+      name: `${anchors.primaryOffer} Revenue Engine`,
       audienceLabel: normalizedLabel,
-      description: `An AI-assisted revenue system that captures ${terms.lead}s, qualifies them, and moves them into booked work or paid plans.`,
-      usefulness: `Useful because it closes the gap between first inquiry and paid conversion, which is where businesses like this usually lose easy money.`,
-      businessImpact: `This should raise conversion speed, improve close rate, and give the ${terms.operator} one place to manage revenue-critical follow-up.`,
+      description: `A standalone software product that turns ${anchors.primaryOffer.toLowerCase()} demand into qualified ${terms.lead.toLowerCase()}s, booked work, and repeat revenue without depending on the website itself.`,
+      usefulness: `Useful because it productizes the site’s main offer into an always-on conversion system instead of relying on forms, callbacks, or manual follow-up.`,
+      businessImpact: `This should raise conversion speed, improve close rate, and give the ${terms.operator} one place to manage ${anchors.primaryOffer.toLowerCase()} demand end to end.`,
       featureList: [
-        `AI qualification for every ${terms.lead}`,
-        'smart intake or booking forms',
+        `${anchors.primaryOffer} intake and qualification`,
+        `AI scoring for every ${terms.lead}`,
+        `${anchors.primaryOffer} booking or activation flow`,
         'pipeline view with next-best action prompts',
         'follow-up automation across email, SMS, or in-app notifications',
         'quote, booking, or plan activation handoff',
@@ -284,12 +311,13 @@ function createIdeasForProfile(sourceLabel, analysis) {
     },
     {
       id: 'ops-os',
-      name: `${titleCase(terms.operator)} Workflow OS`,
+      name: `${anchors.secondaryOffer} Operations Hub`,
       audienceLabel: normalizedLabel,
-      description: `An internal operations console that turns scattered admin work into one tracked system of record for the ${terms.operator}.`,
-      usefulness: `Useful because it replaces repeated staff coordination, status chasing, and spreadsheet management with a single operational command center.`,
-      businessImpact: `This should cut labor waste, reduce dropped handoffs, and make the core ${terms.output} workflow measurable in real time.`,
+      description: `An internal operations system built around delivering ${anchors.secondaryOffer.toLowerCase()} with fewer staff handoffs and less manual coordination.`,
+      usefulness: `Useful because it turns the website’s real delivery workflow into an independent operating system the team can run the business from.`,
+      businessImpact: `This should cut labor waste, reduce dropped handoffs, and make ${anchors.secondaryOffer.toLowerCase()} execution measurable in real time.`,
       featureList: [
+        `${anchors.secondaryOffer} job or case board`,
         'role-based operator workspace',
         'queue and task orchestration',
         'real-time status dashboard',
@@ -303,13 +331,14 @@ function createIdeasForProfile(sourceLabel, analysis) {
     },
     {
       id: 'client-portal',
-      name: `${titleCase(terms.client)} Self-Serve Portal`,
+      name: `${anchors.primaryOffer} Client Portal`,
       audienceLabel: normalizedLabel,
-      description: `A client-facing product where each ${terms.client} can log in, complete key actions, and see progress without calling or emailing staff.`,
-      usefulness: `Useful because it improves retention, reduces support volume, and makes the business feel like a modern software product instead of a manual service.`,
-      businessImpact: `This should improve repeat engagement, reduce support interruptions, and create a durable account-based relationship with every ${terms.client}.`,
+      description: `A standalone client-facing portal where each ${terms.client.toLowerCase()} can log in, manage ${anchors.primaryOffer.toLowerCase()} steps, and track progress without needing staff intervention.`,
+      usefulness: `Useful because it wraps the website’s core offer inside a self-serve product experience that increases retention and reduces support interruptions.`,
+      businessImpact: `This should improve repeat engagement, reduce support volume, and create a durable account-based relationship around ${anchors.primaryOffer.toLowerCase()}.`,
       featureList: [
         `${titleCase(terms.client)} login and profile`,
+        `${anchors.primaryOffer} self-serve workflow`,
         'self-serve forms, updates, and uploads',
         'progress timeline or status tracking',
         'billing or subscription access if needed',
@@ -322,12 +351,13 @@ function createIdeasForProfile(sourceLabel, analysis) {
     },
     {
       id: 'profit-intelligence',
-      name: 'Profit Intelligence Studio',
+      name: `${anchors.contentAnchor} Growth Studio`,
       audienceLabel: normalizedLabel,
-      description: `An AI decision system that highlights what to sell, automate, or fix next so the business can grow margin instead of guessing.`,
-      usefulness: `Useful because it turns the business site and workflow signals into concrete operating decisions, new offers, and expansion plays.`,
-      businessImpact: `This should surface upsell opportunities, identify margin leaks, and give leadership a clearer path to profitable growth.`,
+      description: `An AI product that turns the site’s content, expertise, and offer signals into new standalone revenue streams, upsells, and automation opportunities.`,
+      usefulness: `Useful because it monetizes what the business already talks about on the website, but packages it into a software product that operates independently.`,
+      businessImpact: `This should surface upsell opportunities, identify margin leaks, and create new software-led revenue around ${anchors.contentAnchor.toLowerCase()}.`,
       featureList: [
+        `${anchors.contentAnchor} offer builder`,
         'AI opportunity scoring dashboard',
         'offer or upsell recommendation engine',
         'cash-flow and conversion forecasting',

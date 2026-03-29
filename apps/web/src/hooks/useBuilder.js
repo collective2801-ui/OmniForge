@@ -13,6 +13,11 @@ import {
 } from '../services/referenceAnalyzer.js';
 
 const DEFAULT_PROMPT = 'build a modern landing page with auth and dashboard';
+const REQUIRED_CORE_FILE_PATHS = [
+  'preview/index.html',
+  'api/server.js',
+  'database/schema.sql',
+];
 
 function createUiLog(level, stage, message) {
   return {
@@ -21,6 +26,114 @@ function createUiLog(level, stage, message) {
     stage,
     message,
     timestamp: new Date().toISOString(),
+  };
+}
+
+function createInitialProductReadiness() {
+  return {
+    checks: [
+      {
+        id: 'core_files',
+        label: 'Core app files',
+        passed: false,
+        state: 'pending',
+        detail: 'Run a build to verify generated app files.',
+      },
+      {
+        id: 'deployment_url',
+        label: 'Deployment URL',
+        passed: false,
+        state: 'pending',
+        detail: 'Run a build to verify deployment output.',
+      },
+      {
+        id: 'runtime_status',
+        label: 'Runtime health',
+        passed: false,
+        state: 'pending',
+        detail: 'Run a build to verify runtime diagnostics.',
+      },
+      {
+        id: 'finalization_status',
+        label: 'Finalization',
+        passed: false,
+        state: 'pending',
+        detail: 'Run a build to verify finalization.',
+      },
+    ],
+    score: 0,
+    total: 4,
+    ready: false,
+    missingFiles: [],
+  };
+}
+
+function evaluateProductReadiness({ files = [], deployment = null, runtime = null, finalization = null } = {}) {
+  const generatedPaths = new Set(
+    Array.isArray(files)
+      ? files
+          .map((file) => (typeof file?.path === 'string' ? file.path.trim() : ''))
+          .filter(Boolean)
+      : [],
+  );
+  const missingFiles = REQUIRED_CORE_FILE_PATHS.filter((filePath) => !generatedPaths.has(filePath));
+  const hasDeploymentUrl =
+    typeof deployment?.url === 'string' && deployment.url.trim().length > 0;
+  const runtimeHealthy = runtime?.status === 'healthy';
+  const finalizationState = String(finalization?.status ?? '').toLowerCase();
+  const finalizationFailed =
+    !finalization ||
+    finalization?.validated === false ||
+    finalizationState === 'failed' ||
+    finalizationState === 'error';
+
+  const checks = [
+    {
+      id: 'core_files',
+      label: 'Core app files',
+      passed: missingFiles.length === 0,
+      state: missingFiles.length === 0 ? 'passed' : 'failed',
+      detail:
+        missingFiles.length === 0
+          ? 'Preview, backend scaffold, and database schema are present.'
+          : `Missing required files: ${missingFiles.join(', ')}.`,
+    },
+    {
+      id: 'deployment_url',
+      label: 'Deployment URL',
+      passed: hasDeploymentUrl,
+      state: hasDeploymentUrl ? 'passed' : 'failed',
+      detail: hasDeploymentUrl
+        ? `Live URL available at ${deployment.url}.`
+        : 'No deployment URL was returned.',
+    },
+    {
+      id: 'runtime_status',
+      label: 'Runtime health',
+      passed: runtimeHealthy,
+      state: runtimeHealthy ? 'passed' : 'failed',
+      detail: runtimeHealthy
+        ? 'Runtime diagnostics report a healthy system.'
+        : `Runtime status is ${runtime?.status ?? 'missing'}.`,
+    },
+    {
+      id: 'finalization_status',
+      label: 'Finalization',
+      passed: !finalizationFailed,
+      state: !finalizationFailed ? 'passed' : 'failed',
+      detail: !finalizationFailed
+        ? `Finalization completed${typeof finalization?.retries === 'number' ? ` after ${finalization.retries} retr${finalization.retries === 1 ? 'y' : 'ies'}` : ''}.`
+        : `Finalization ${finalization ? 'did not pass' : 'is missing'}.`,
+    },
+  ];
+  const score = checks.filter((check) => check.passed).length;
+
+  return {
+    checks,
+    score,
+    total: checks.length,
+    ready: score === checks.length,
+    missingFiles,
   };
 }
 
@@ -111,6 +224,7 @@ export function useBuilder(projectContext = {}) {
   const [processingReferences, setProcessingReferences] = useState(false);
   const [inputAnalysis, setInputAnalysis] = useState(null);
   const [selectedBuildOptions, setSelectedBuildOptions] = useState([]);
+  const [productReadiness, setProductReadiness] = useState(createInitialProductReadiness);
   const referencesRef = useRef([]);
 
   useEffect(() => {
@@ -168,7 +282,7 @@ export function useBuilder(projectContext = {}) {
     }
 
     try {
-      const nextReference = createWebsiteReference(normalizedValue);
+      const nextReference = await createWebsiteReference(normalizedValue);
       const nextReferences = mergeReferences(referencesRef.current, [nextReference]);
       setProcessingReferences(true);
       setError('');
@@ -366,6 +480,7 @@ export function useBuilder(projectContext = {}) {
       setBusiness(null);
       setGrowth(null);
       setAutonomous(false);
+      setProductReadiness(createInitialProductReadiness());
       setSelectedBuildOptions(
         Array.isArray(runOptions.selectedOptions)
           ? runOptions.selectedOptions
@@ -408,6 +523,9 @@ export function useBuilder(projectContext = {}) {
         inputMode,
         builderContext,
         mode: runMode,
+        executionProfile: 'production_product',
+        qualityTarget: 'blink_new_parity',
+        requireProductionReadiness: true,
         analysis: runOptions.analysis ?? null,
         selectedOption: runOptions.selectedOption ?? null,
         onEvent(event) {
@@ -432,6 +550,13 @@ export function useBuilder(projectContext = {}) {
             });
           }
         },
+      });
+
+      const nextReadiness = evaluateProductReadiness({
+        files: result.generatedFiles,
+        deployment: result.deployment,
+        runtime: result.runtime,
+        finalization: result.finalization,
       });
 
       startTransition(() => {
@@ -465,6 +590,7 @@ export function useBuilder(projectContext = {}) {
         setSelectedFilePath((currentPath) => currentPath || result.generatedFiles[0]?.path || '');
         setStatus(result.status);
         setLogs(result.logs);
+        setProductReadiness(nextReadiness);
       });
 
       return result;
@@ -520,14 +646,74 @@ export function useBuilder(projectContext = {}) {
     });
   }
 
+  async function buildSelectedReferenceOptions() {
+    const optionsToBuild = selectedBuildOptions.slice(0, 2);
+
+    if (optionsToBuild.length === 0) {
+      return [];
+    }
+
+    const results = [];
+
+    for (const option of optionsToBuild) {
+      const result = await buildFromReferenceOption(option);
+      results.push(result);
+    }
+
+    return results;
+  }
+
+  async function runCompletionPass() {
+    const failedChecks = productReadiness.checks.filter((check) => check.state === 'failed');
+
+    if (failedChecks.length === 0) {
+      startTransition(() => {
+        setLogs((currentLogs) => [
+          ...currentLogs,
+          createUiLog('info', 'console', 'Completion pass skipped. No failed readiness checks were found.'),
+        ]);
+      });
+      return null;
+    }
+
+    const targetName =
+      intent?.projectName ||
+      initialProjectName ||
+      projectContext.projectName ||
+      'the current product';
+    const failedChecklist = failedChecks
+      .map((check) => `- ${check.label}: ${check.detail}`)
+      .join('\n');
+    const missingFilesSummary =
+      productReadiness.missingFiles.length > 0
+        ? `Missing files that must be generated or repaired: ${productReadiness.missingFiles.join(', ')}.`
+        : '';
+
+    const completionPrompt = [
+      `Run a production completion pass for ${targetName}.`,
+      'Fix only the remaining gaps needed for a fully functional production-ready product without regressing existing working flows.',
+      'Resolve these failed readiness checks:',
+      failedChecklist,
+      missingFilesSummary,
+      'Requirements: ensure the core app files exist, return a deployment URL, make runtime health healthy, and complete finalization successfully.',
+      'Generate or repair whatever is missing and deliver the corrected product.',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    return runPrompt(completionPrompt, {
+      inputMode: 'text',
+    });
+  }
+
   function toggleBuildOption(option) {
     if (!option || typeof option !== 'object') {
       return;
     }
 
     setSelectedBuildOptions((currentSelected) => {
-      if (currentSelected.includes(option)) {
-        return currentSelected.filter((selectedOption) => selectedOption !== option);
+      if (currentSelected.some((selectedOption) => selectedOption.id === option.id)) {
+        return currentSelected.filter((selectedOption) => selectedOption.id !== option.id);
       }
 
       if (currentSelected.length < 2) {
@@ -586,6 +772,7 @@ export function useBuilder(projectContext = {}) {
     referenceBuildOptions,
     selectedBuildOptions,
     selectedBuildOption,
+    productReadiness,
     websiteDraft,
     setWebsiteDraft,
     processingReferences,
@@ -594,6 +781,8 @@ export function useBuilder(projectContext = {}) {
     removeReference,
     toggleBuildOption,
     buildFromReferenceOption,
+    buildSelectedReferenceOptions,
+    runCompletionPass,
     runPrompt,
     publishProject,
   };

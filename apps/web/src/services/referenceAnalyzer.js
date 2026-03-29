@@ -204,6 +204,52 @@ function normalizeWebsiteUrl(rawValue) {
   return parsedUrl.toString();
 }
 
+async function fetchWebsiteText(url) {
+  const targets = [
+    `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, '')}`,
+  ];
+
+  for (const target of targets) {
+    try {
+      const response = await fetch(target);
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const text = sanitizeText(await response.text(), 9000);
+
+      if (text) {
+        return text;
+      }
+    } catch {
+      // Ignore fetch failures and fall back to hostname-only analysis.
+    }
+  }
+
+  return '';
+}
+
+function extractWebsiteSummary(text = '', hostname = '') {
+  const normalized = sanitizeText(text, 1800);
+
+  if (!normalized) {
+    return `Website reference queued for analysis from ${hostname}.`;
+  }
+
+  const titleMatch = normalized.match(/Title:\s*([^\n]+)/i);
+  const markdownMatch = normalized.match(/Markdown Content:\s*([\s\S]+)/i);
+  const content = sanitizeText(markdownMatch?.[1] || normalized, 1200);
+  const summary = summarizeText(content);
+  const title = titleMatch?.[1] ? sanitizeText(titleMatch[1], 120) : '';
+
+  if (title && summary) {
+    return `${title}. ${summary}`;
+  }
+
+  return summary || `Website reference queued for analysis from ${hostname}.`;
+}
+
 async function readTextExcerpt(file) {
   const text = await file.text();
   return sanitizeText(text);
@@ -352,9 +398,11 @@ export async function analyzeUploadedFiles(fileList) {
   );
 }
 
-export function createWebsiteReference(rawValue) {
+export async function createWebsiteReference(rawValue) {
   const url = normalizeWebsiteUrl(rawValue);
   const parsedUrl = new URL(url);
+  const excerpt = await fetchWebsiteText(url);
+  const summary = extractWebsiteSummary(excerpt, parsedUrl.hostname);
 
   return {
     id: createReferenceId('website'),
@@ -363,7 +411,8 @@ export function createWebsiteReference(rawValue) {
     label: parsedUrl.hostname,
     name: parsedUrl.hostname,
     url,
-    summary: `Website reference queued for analysis from ${parsedUrl.hostname}.`,
+    excerpt,
+    summary,
   };
 }
 
@@ -391,6 +440,7 @@ function sanitizeReferenceForSubmission(reference) {
     return {
       ...baseReference,
       url: reference.url,
+      excerpt: reference.excerpt ?? '',
     };
   }
 
